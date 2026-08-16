@@ -26,7 +26,7 @@ export default async function TokensPage() {
         {tokens.map((t) => (
           <tr key={t.id} className="hover:bg-[#111]">
             <Td className="text-white">{t.name}</Td>
-            <Td>{t.app.name}</Td>
+            <Td>{t.app?.name ?? '—'}</Td>
             <Td><Badge status={t.status === 'ACTIVE' ? 'ACTIVE' : 'REVOKED'} /></Td>
             <Td className="text-xs">{new Date(t.createdAt).toLocaleString('pt-BR')}</Td>
             <Td className="text-xs">{t.lastUsedAt ? new Date(t.lastUsedAt).toLocaleString('pt-BR') : 'â€”'}</Td>

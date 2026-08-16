@@ -36,7 +36,7 @@ export default async function VariablesPage({ searchParams }: { searchParams: Re
           <tr key={v.id} className="hover:bg-[#111]">
             <Td className="text-white font-mono text-xs">{v.name}</Td>
             <Td className="font-mono text-xs">{v.value}</Td>
-            <Td>{v.app.name}</Td>
+            <Td>{v.app?.name ?? '—'}</Td>
             <Td><ActionForm action={deleteAppVariable.bind(null, v.id)} confirmText="Delete variable?"><button className={btn.red}>Delete</button></ActionForm></Td>
           </tr>
         ))}

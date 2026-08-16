@@ -1,4 +1,4 @@
-import { db } from '@/lib/db';
+﻿import { db } from '@/lib/db';
 import { getAdminSession } from '@/lib/session';
 import { redirect, notFound } from 'next/navigation';
 import Link from 'next/link';
@@ -25,8 +25,8 @@ export default async function LicenseDetailsPage({ params }: { params: { id: str
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card title="Details">
           <div className="space-y-2 text-sm">
-            <div className="flex justify-between"><span className="text-gray-500">Application</span><span className="text-white">{lic.app.name}</span></div>
-            <div className="flex justify-between"><span className="text-gray-500">User</span>{lic.user ? <Link href={`/users/${lic.user.id}`} className="text-red-400">{lic.user.username}</Link> : <span>—</span>}</div>
+            <div className="flex justify-between"><span className="text-gray-500">Application</span><span className="text-white">{lic.app?.name ?? '—'}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">User</span>{lic.user ? <Link href={`/users/${lic.user.id}`} className="text-red-400">{lic.user?.username ?? '—'}</Link> : <span>—</span>}</div>
             <div className="flex justify-between"><span className="text-gray-500">Created</span><span className="text-white">{new Date(lic.createdAt).toLocaleString('pt-BR')}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Activated</span><span className="text-white">{lic.activatedAt ? new Date(lic.activatedAt).toLocaleString('pt-BR') : '—'}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Expires</span><span className="text-white">{lic.expiresAt ? new Date(lic.expiresAt).toLocaleString('pt-BR') : 'Lifetime'}</span></div>

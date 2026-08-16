@@ -1,4 +1,4 @@
-import { db } from '@/lib/db';
+﻿import { db } from '@/lib/db';
 import { getAdminSession } from '@/lib/session';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
@@ -139,7 +139,7 @@ export default async function LicensesPage({ searchParams }: { searchParams: Rec
             <Td>
               {l.user ? (
                 <Link className="text-red-400 hover:text-red-300 transition-colors" href={`/users/${l.user.id}`}>
-                  {l.user.username}
+                  {l.user?.username ?? '—'}
                 </Link>
               ) : (
                 '—'

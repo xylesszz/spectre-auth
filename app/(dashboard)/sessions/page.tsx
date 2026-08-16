@@ -1,4 +1,4 @@
-import { db } from '@/lib/db';
+﻿import { db } from '@/lib/db';
 import { getAdminSession } from '@/lib/session';
 import { redirect } from 'next/navigation';
 import { PageHeader, Th, Td, TableShell, Badge, btn } from '@/components/ui';
@@ -19,7 +19,7 @@ export default async function SessionsPage() {
       <TableShell colSpan={7} empty={sessions.length === 0} head={<><Th>User</Th><Th>Application</Th><Th>IP</Th><Th>PC / Device</Th><Th>Last Activity</Th><Th>Status</Th><Th></Th></>}>
         {sessions.map((s) => (
           <tr key={s.id} className="hover:bg-[#111]">
-            <Td className="text-white">{s.user.username}</Td>
+            <Td className="text-white">{s.user?.username ?? '—'}</Td>
             <Td>{s.app?.name ?? '—'}</Td>
             <Td className="font-mono text-xs">{s.ip}</Td>
             <Td className="text-xs">{s.pcName ?? '—'}</Td>

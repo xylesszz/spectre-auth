@@ -1,4 +1,4 @@
-import { db } from '@/lib/db';
+﻿import { db } from '@/lib/db';
 import { getAdminSession } from '@/lib/session';
 import { redirect, notFound } from 'next/navigation';
 import Link from 'next/link';
@@ -88,7 +88,7 @@ export default async function UserDetailsPage({ params }: { params: { id: string
         <div className="space-y-2">
           {user.licenses.map((l) => (
             <div key={l.id} className="flex justify-between items-center p-3 bg-black/50 border border-gray-800 rounded">
-              <div><Link href={`/licenses/${l.id}`} className="text-sm text-white font-mono hover:text-red-500">{l.key}</Link><p className="text-xs text-gray-600">{l.app.name}</p></div>
+              <div><Link href={`/licenses/${l.id}`} className="text-sm text-white font-mono hover:text-red-500">{l.key}</Link><p className="text-xs text-gray-600">{l.app?.name ?? '—'}</p></div>
               <div className="flex items-center gap-3"><span className="text-xs text-gray-500">{l.expiresAt ? new Date(l.expiresAt).toLocaleDateString('pt-BR') : 'Lifetime'}</span><Badge status={l.status} /></div>
             </div>
           ))}
