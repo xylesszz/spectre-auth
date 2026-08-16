@@ -1,0 +1,156 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum LicenseStatus {
+  UNUSED
+  ACTIVE
+  EXPIRED
+  REVOKED
+  SUSPENDED
+}
+
+enum AppStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum CredentialStatus {
+  ACTIVE
+  REVOKED
+}
+
+model Admin {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  passwordHash  String
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  sessions      AdminSession[]
+}
+
+model AdminSession {
+  id           String   @id @default(cuid())
+  adminId      String
+  admin        Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  lastActivity DateTime @default(now())
+  ip           String?
+  userAgent    String?
+
+  @@index([adminId])
+}
+
+model User {
+  id           String        @id @default(cuid())
+  username     String        @unique
+  email        String?       @unique
+  passwordHash String?
+  status       UserStatus    @default(ACTIVE)
+  hwidHash     String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  lastLoginAt  DateTime?
+  lastIp       String?
+  licenses     License[]
+  sessions     UserSession[]
+}
+
+model UserSession {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  lastActivity DateTime @default(now())
+  ip           String?
+  userAgent    String?
+
+  @@index([userId])
+}
+
+model Application {
+  id          String                @id @default(cuid())
+  name        String
+  slug        String                @unique
+  status      AppStatus             @default(ACTIVE)
+  version     String?
+  description String?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  licenses    License[]
+  credentials ApplicationCredential[]
+}
+
+model ApplicationCredential {
+  id            String           @id @default(cuid())
+  appId         String
+  app           Application      @relation(fields: [appId], references: [id], onDelete: Cascade)
+  publicId      String           @unique
+  secretHash    String
+  status        CredentialStatus @default(ACTIVE)
+  createdAt     DateTime         @default(now())
+  lastUsedAt    DateTime?
+  revokedAt     DateTime?
+
+  @@index([appId])
+}
+
+model License {
+  id             String        @id @default(cuid())
+  key            String        @unique
+  status         LicenseStatus @default(UNUSED)
+  appId          String
+  app            Application   @relation(fields: [appId], references: [id], onDelete: Restrict)
+  userId         String?
+  user           User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt      DateTime      @default(now())
+  activatedAt    DateTime?
+  expiresAt      DateTime?
+  durationDays   Int?
+  maxActivations Int           @default(1)
+  activationCount Int          @default(0)
+  lastValidationAt DateTime?
+  revokedAt      DateTime?
+  hwidHash       String?
+  metadata       Json?
+  activations    LicenseActivation[]
+}
+
+model LicenseActivation {
+  id          String   @id @default(cuid())
+  licenseId   String
+  license     License  @relation(fields: [licenseId], references: [id], onDelete: Cascade)
+  hwidHash    String?
+  ip          String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([licenseId])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  action      String
+  entityType  String?
+  entityId    String?
+  actorId     String?
+  actorType   String?
+  ip          String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+}
