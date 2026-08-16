@@ -1,4 +1,3 @@
-FILE: lib/hwid.ts
 import { createHash } from 'crypto';
 
 export function normalizeAndHashHwid(hwid: string): string {
