@@ -19,7 +19,7 @@ const ip = () => headers().get('x-forwarded-for') || 'unknown';
 
 async function audit(action: string, entityId: string | null, meta?: Record<string, unknown>) {
   const s = await getAdminSession();
-  await logAudit({ action, entityType: 'User', entityId, actorId: s?.adminId, actorType: 'Admin', ip: ip(), metadata: (meta ?? {}) as any });
+  await logAudit({ action, entityType: 'User', entityId: entityId ?? undefined, actorId: s?.adminId, actorType: 'Admin', ip: ip(), metadata: (meta ?? {}) as any });
 }
 
 function reval(id?: string) {

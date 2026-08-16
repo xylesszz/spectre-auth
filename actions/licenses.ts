@@ -23,7 +23,7 @@ async function audit(action: string, entityId: string | null, meta?: Record<stri
   await logAudit({
     action,
     entityType: 'License',
-    entityId,
+    entityId: entityId ?? undefined,
     actorId: s?.adminId,
     actorType: 'Admin',
     ip: ip(),
