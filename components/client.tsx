@@ -1,32 +1,27 @@
 'use client';
 
-import { ReactNode, FormEvent, useEffect, useState } from 'react';
+import { ReactNode, FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { btn, input, label } from './ui';
-import { toast } from './toast';
 
-export function ActionForm({ action, confirmText, children, className = 'inline' }: { action: (fd: FormData) => Promise<unknown>; confirmText?: string; children: ReactNode; className?: string }) {
+export function ActionForm({ action, confirmText, children, className = 'inline' }: { 
+  action: any; // Tipagem flexível para aceitar qualquer Server Action
+  confirmText?: string; 
+  children: ReactNode; 
+  className?: string 
+}) {
   const [armed, setArmed] = useState(false);
-
-  useEffect(() => {
-    if (!armed) return;
-    const t = setTimeout(() => setArmed(false), 3000);
-    return () => clearTimeout(t);
-  }, [armed]);
 
   return (
     <form
-      action={action}
+      action={action as any} // Cast para bypassar a checagem estrita do Next.js
       className={`${className} ${armed ? 'outline outline-1 outline-red-600 rounded' : ''}`}
       onSubmit={(e) => {
         if (confirmText && !armed) {
           e.preventDefault();
           setArmed(true);
-          toast(`${confirmText} — clique novamente para confirmar.`, 'info');
-          return;
+          setTimeout(() => setArmed(false), 3000); // Reseta após 3s se não clicar de novo
         }
-        setArmed(false);
-        toast('Executing action...', 'info');
       }}
     >
       {children}
@@ -54,7 +49,7 @@ export function CopyBtn({ text }: { text: string }) {
     <button
       type="button"
       className={btn.gray}
-      onClick={() => { navigator.clipboard.writeText(text); setOk(true); toast('Copied to clipboard', 'success'); setTimeout(() => setOk(false), 1500); }}
+      onClick={() => { navigator.clipboard.writeText(text); setOk(true); setTimeout(() => setOk(false), 1500); }}
     >
       {ok ? 'Copied ✓' : 'Copy'}
     </button>
@@ -120,10 +115,9 @@ export function InvokeButton({ fn, arg, label: text, className = btn.blue }: { f
           try {
             const r = arg !== undefined ? await fn(arg) : await fn();
             if (r && (r.secret || r.token || r.keys || r.publicId)) setResult(r);
-            else toast('Done', 'success');
             router.refresh();
           } catch (e: any) {
-            toast(e.message ?? 'Error', 'error');
+            alert(e.message ?? 'Error');
           } finally {
             setBusy(false);
           }
@@ -164,10 +158,9 @@ export function ClientForm({ submitLabel, fn, fields, cols = 'grid-cols-2' }: { 
       fields.forEach((f) => fd.append(f.name, values[f.name] ?? ''));
       const r = await fn(fd);
       if (r && (r.secret || r.token || r.keys || r.publicId)) setResult(r);
-      else toast('Created successfully', 'success');
       router.refresh();
     } catch (e: any) {
-      toast(e.message ?? 'Error', 'error');
+      alert(e.message ?? 'Error');
     } finally {
       setBusy(false);
     }
@@ -183,15 +176,34 @@ export function ClientForm({ submitLabel, fn, fields, cols = 'grid-cols-2' }: { 
               {f.required && <span className="text-red-500"> *</span>}
             </span>
             {f.type === 'select' ? (
-              <select required={f.required} className={input} value={values[f.name]} onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))}>
+              <select
+                required={f.required}
+                className={input}
+                value={values[f.name]}
+                onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))}
+              >
                 {f.options?.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
             ) : f.type === 'textarea' ? (
-              <textarea required={f.required} rows={4} placeholder={f.placeholder} className={input} value={values[f.name]} onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))} />
+              <textarea
+                required={f.required}
+                rows={4}
+                placeholder={f.placeholder}
+                className={input}
+                value={values[f.name]}
+                onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))}
+              />
             ) : (
-              <input required={f.required} type={f.type} placeholder={f.placeholder} className={input} value={values[f.name]} onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))} />
+              <input
+                required={f.required}
+                type={f.type}
+                placeholder={f.placeholder}
+                className={input}
+                value={values[f.name]}
+                onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))}
+              />
             )}
           </div>
         ))}
