@@ -84,9 +84,9 @@ export async function logApi(action: string, app: { id: string } | null, meta: {
   await logAudit({
     action,
     entityType: 'API',
-    entityId: app?.id ?? null,
+    entityId: app?.id ?? undefined,
     actorType: 'Application',
-    actorId: app?.id ?? null,
+    actorId: app?.id ?? undefined,
     ip: meta.ip,
     metadata: (extra ?? {}) as any,
   });
