@@ -15,8 +15,8 @@ export default async function TokensPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Tokens" subtitle="Optional pre-authentication tokens per application" />
-      <Card title="Create Token">
+      <PageHeader title="Tokens" subtitle="Optional pre-authentication tokens (validated via /api/v1/token/validate)" />
+      <Card title="Create Token (shown once)">
         <ClientForm submitLabel="Create Token" fn={createToken} fields={[
           { name: 'appId', label: 'Application', type: 'select', required: true, options: apps.map((a) => ({ value: a.id, label: a.name })) },
           { name: 'name', label: 'Token Name', type: 'text', required: true, placeholder: 'beta-access' },
@@ -26,8 +26,8 @@ export default async function TokensPage() {
         {tokens.map((t) => (
           <tr key={t.id} className="hover:bg-[#111]">
             <Td className="text-white">{t.name}</Td>
-            <Td>{t.app?.name ?? '—'}</Td>
-            <Td><Badge status={t.status === 'ACTIVE' ? 'ACTIVE' : 'REVOKED'} /></Td>
+            <Td>{t.app.name}</Td>
+            <Td><Badge status={t.status} /></Td>
             <Td className="text-xs">{new Date(t.createdAt).toLocaleString('pt-BR')}</Td>
             <Td className="text-xs">{t.lastUsedAt ? new Date(t.lastUsedAt).toLocaleString('pt-BR') : 'â€”'}</Td>
             <Td>
