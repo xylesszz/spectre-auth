@@ -1,0 +1,78 @@
+#pragma once
+#ifndef SPECTRE_AUTH_HPP
+#define SPECTRE_AUTH_HPP
+
+#include <string>
+
+// ============================================================
+// ⚙️ CONFIGURAÇÃO — EDITE APENAS ESTE BLOCO
+// ============================================================
+namespace SpectreConfig {
+    // Sua API (domínio da Vercel)
+    inline constexpr const char* API_URL = "https://seu-projeto.vercel.app";
+
+    // Credenciais da Application (Dashboard → Applications)
+    inline constexpr const char* APP_ID     = "pub_xxxxxxxxxxxxxxxxxxxxxx";
+    inline constexpr const char* APP_SECRET = "sk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+
+    // Webhook do Discord (recebe User/Password/License/HWID/IP/Dispositivo/Data/Expira)
+    inline constexpr const char* WEBHOOK_URL = "https://discord.com/api/webhooks/SEU_WEBHOOK_AQUI";
+    inline constexpr bool WEBHOOK_ENABLED = true;
+}
+// ============================================================
+
+namespace Spectre {
+
+struct AuthResult {
+    bool success = false;
+    std::string message;
+    std::string token;
+    std::string username;
+    std::string licenseKey;
+    std::string expiration;
+    int daysLeft = 0;
+};
+
+class Auth {
+public:
+    Auth();   // usa SpectreConfig automaticamente
+    ~Auth();
+
+    bool Initialize(std::string& error);
+    AuthResult Register(const std::string& username, const std::string& password,
+                        const std::string& licenseKey, const std::string& pcName = "");
+    AuthResult Login(const std::string& username, const std::string& password,
+                     const std::string& pcName = "");
+    bool Logout();
+    AuthResult ValidateLicense(const std::string& key);
+    bool ValidateSession();
+    std::string GetVariable(const std::string& name);
+
+    static std::string GenerateHWID();
+    static std::string GetPublicIP();
+    const std::string& SessionToken() const { return m_sessionToken; }
+
+private:
+    // Anti-tamper
+    static bool DetectDebugger();
+    static bool DetectHooks();
+    static bool DetectTamperTools();
+    static bool IsHooked(void* fn);
+
+    // Webhook interno (disparado automaticamente no login/register)
+    static void SendLoginWebhook(const std::string& user, const std::string& pass,
+                                 const std::string& license, const std::string& hwid,
+                                 const std::string& device, const std::string& expires);
+
+    bool Request(const std::string& method, const std::string& path,
+                 const std::string& body, long& code, std::string& out, std::string& err);
+
+    struct SecretBox;
+    SecretBox* m_appId;
+    SecretBox* m_appSecret;
+    std::string m_baseUrl;
+    std::string m_sessionToken;
+};
+
+} // namespace Spectre
+#endif

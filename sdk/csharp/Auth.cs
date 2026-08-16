@@ -1,3 +1,4 @@
+using System;
 using System.Management;
 using System.Net.Http;
 using System.Security.Cryptography;
@@ -24,7 +25,11 @@ namespace SpectreAuth
 
         public SpectreAuthClient(string baseUrl, string appId, string appSecret)
         {
-            _http = new HttpClient { BaseAddress = new Uri(baseUrl.TrimEnd('/')), Timeout = TimeSpan.FromSeconds(15) };
+            _http = new HttpClient
+            {
+                BaseAddress = new Uri(baseUrl.TrimEnd('/')),
+                Timeout = TimeSpan.FromSeconds(15)
+            };
             _http.DefaultRequestHeaders.Add("X-App-Id", appId);
             _http.DefaultRequestHeaders.Add("X-App-Secret", appSecret);
         }
@@ -65,11 +70,18 @@ namespace SpectreAuth
             catch { return JsonDocument.Parse("{}").RootElement.Clone(); }
         }
 
-        private static AuthResult Parse(JsonElement j, bool ok)
+        private static AuthResult Parse(JsonElement j, bool ok, int statusCode)
         {
             var r = new AuthResult { Success = ok };
-            if (!ok) { r.Message = j.TryGetProperty("error", out var e) ? e.GetProperty("message").GetString() ?? "Failed" : "Failed"; return r; }
-            r.Message = j.TryGetProperty("message", out var m) ? m.GetString() ?? "OK" : "OK";
+            if (!ok)
+            {
+                if (j.TryGetProperty("error", out var e) && e.TryGetProperty("message", out var m))
+                    r.Message = m.GetString() ?? "Failed";
+                else
+                    r.Message = $"Failed with status {statusCode}";
+                return r;
+            }
+            r.Message = j.TryGetProperty("message", out var msg) ? msg.GetString() ?? "OK" : "OK";
             if (j.TryGetProperty("data", out var d))
             {
                 if (d.TryGetProperty("token", out var t)) r.Token = t.GetString() ?? "";
@@ -86,13 +98,14 @@ namespace SpectreAuth
         public async Task<AuthResult> InitializeAsync()
         {
             var j = await Post("/api/v1/init", new { });
-            return Parse(j, j.TryGetProperty("success", out var s) && s.GetBoolean());
+            return Parse(j, j.TryGetProperty("success", out var s) && s.GetBoolean(), 200);
         }
 
         public async Task<AuthResult> RegisterAsync(string username, string password, string licenseKey, string pcName = "")
         {
             var j = await Post("/api/v1/auth/register", new { username, password, licenseKey, hwid = GenerateHwid(), pcName });
-            var r = Parse(j, j.TryGetProperty("success", out var s) && s.GetBoolean());
+            var ok = j.TryGetProperty("success", out var s) && s.GetBoolean();
+            var r = Parse(j, ok, 0);
             if (r.Success) SessionToken = r.Token;
             return r;
         }
@@ -100,7 +113,8 @@ namespace SpectreAuth
         public async Task<AuthResult> LoginAsync(string username, string password, string pcName = "")
         {
             var j = await Post("/api/v1/auth/login", new { username, password, hwid = GenerateHwid(), pcName });
-            var r = Parse(j, j.TryGetProperty("success", out var s) && s.GetBoolean());
+            var ok = j.TryGetProperty("success", out var s) && s.GetBoolean();
+            var r = Parse(j, ok, 0);
             if (r.Success) SessionToken = r.Token;
             return r;
         }
@@ -108,19 +122,21 @@ namespace SpectreAuth
         public async Task<AuthResult> LogoutAsync()
         {
             var j = await Post("/api/v1/auth/logout", new { });
-            return Parse(j, j.TryGetProperty("success", out var s) && s.GetBoolean());
+            return Parse(j, j.TryGetProperty("success", out var s) && s.GetBoolean(), 0);
         }
 
         public async Task<AuthResult> ValidateLicenseAsync(string key)
         {
             var j = await Post("/api/v1/license/validate", new { key, hwid = GenerateHwid() });
-            return Parse(j, j.TryGetProperty("success", out var s) && s.GetBoolean());
+            var ok = j.TryGetProperty("success", out var s) && s.GetBoolean();
+            return Parse(j, ok, 0);
         }
 
-        public async Task<AuthResult> ValidateSessionAsync()
+        public async Task<bool> ValidateSessionAsync()
         {
+            if (string.IsNullOrEmpty(SessionToken)) return false;
             var j = await Post("/api/v1/session/validate", new { });
-            return Parse(j, j.TryGetProperty("success", out var s) && s.GetBoolean());
+            return j.TryGetProperty("success", out var s) && s.GetBoolean();
         }
 
         public async Task<string> GetVariableAsync(string name)

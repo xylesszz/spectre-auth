@@ -1,5 +1,4 @@
-FILE: sdk/cpp/Auth.cpp
-#include "Auth.h"
+#include "Auth.hpp"
 #include <windows.h>
 #include <winhttp.h>
 #include <Wbemidl.h>
@@ -7,14 +6,19 @@ FILE: sdk/cpp/Auth.cpp
 #include <bcrypt.h>
 #include <vector>
 #include <algorithm>
-#include "nlohmann/json.hpp"
+#include "Cfg/nlohmann/json.hpp"
+
 #pragma comment(lib, "winhttp.lib")
 #pragma comment(lib, "wbemuuid.lib")
 #pragma comment(lib, "bcrypt.lib")
+
 using json = nlohmann::json;
 
 namespace Spectre {
 
+// ============================================================
+// SHA256 via BCrypt (Windows)
+// ============================================================
 static std::string Sha256Hex(const std::string& input) {
     BCRYPT_ALG_HANDLE hAlg = NULL; BCRYPT_HASH_HANDLE hHash = NULL;
     DWORD objLen = 0, cb = 0, hashLen = 0;
@@ -33,6 +37,9 @@ static std::string Sha256Hex(const std::string& input) {
     return out;
 }
 
+// ============================================================
+// WMI Query (para gerar HWID)
+// ============================================================
 static bool WmiSingle(const wchar_t* wql, const wchar_t* field, std::string& out) {
     out.clear();
     HRESULT hr = CoInitializeEx(0, COINIT_MULTITHREADED);
@@ -71,20 +78,27 @@ std::string Auth::GenerateHWID() {
     return h.empty() ? "unknown" : h;
 }
 
+// ============================================================
+// HTTP Client via WinHTTP
+// ============================================================
 Auth::Auth(const std::string& baseUrl, const std::string& appId, const std::string& appSecret)
     : m_baseUrl(baseUrl), m_appId(appId), m_appSecret(appSecret) {
     while (!m_baseUrl.empty() && m_baseUrl.back() == '/') m_baseUrl.pop_back();
 }
 
-bool Auth::Request(const std::string& method, const std::string& path, const std::string& body, long& code, std::string& out, std::string& err) {
+bool Auth::Request(const std::string& method, const std::string& path,
+                   const std::string& body, long& code, std::string& out, std::string& err) {
     URL_COMPONENTS uc{}; uc.dwStructSize = sizeof(uc); uc.dwHostNameLength = 1; uc.dwUrlPathLength = 1;
     std::wstring wUrl(m_baseUrl.begin(), m_baseUrl.end());
     if (!WinHttpCrackUrl(wUrl.c_str(), 0, 0, &uc)) { err = "Invalid URL"; return false; }
+
     HINTERNET hSession = WinHttpOpen(L"SpectreAuth/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!hSession) { err = "WinHttpOpen failed"; return false; }
+
     std::wstring host(uc.lpszHostName, uc.dwHostNameLength);
     HINTERNET hConnect = WinHttpConnect(hSession, host.c_str(), uc.nPort, 0);
     if (!hConnect) { WinHttpCloseHandle(hSession); err = "Connect failed"; return false; }
+
     DWORD flags = (uc.nPort == INTERNET_DEFAULT_HTTPS_PORT) ? WINHTTP_FLAG_SECURE : 0;
     std::wstring wPath(uc.lpszUrlPath, uc.dwUrlPathLength);
     std::wstring wMethod(method.begin(), method.end());
@@ -109,6 +123,7 @@ bool Auth::Request(const std::string& method, const std::string& path, const std
     DWORD sc = 0, scSize = sizeof(sc);
     WinHttpQueryHeaders(hReq, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_HEADER_NAME_BY_INDEX, &sc, &scSize, WINHTTP_NO_HEADER_INDEX);
     code = (long)sc;
+
     DWORD avail = 0;
     do {
         avail = 0;
@@ -119,31 +134,46 @@ bool Auth::Request(const std::string& method, const std::string& path, const std
             if (WinHttpReadData(hReq, buf.data(), avail, &read)) out.append(buf.data(), read);
         }
     } while (avail > 0);
+
     WinHttpCloseHandle(hReq); WinHttpCloseHandle(hConnect); WinHttpCloseHandle(hSession);
     return true;
 }
 
+// ============================================================
+// Parse response
+// ============================================================
 static AuthResult ParseAuth(const std::string& body, bool ok) {
     AuthResult r; r.success = ok;
     json j = json::parse(body, nullptr, false);
     if (j.is_discarded()) { r.message = "Invalid JSON"; return r; }
+
     if (!ok) {
-        r.message = j.value("/error/message"_json_pointer, "Request failed");
+        if (j.contains("error") && j["error"].is_object()) {
+            r.message = j["error"].value("message", "Request failed");
+        } else {
+            r.message = j.value("message", "Request failed");
+        }
         return r;
     }
+
     r.message = j.value("message", "OK");
     if (j.contains("data")) {
         auto& d = j["data"];
         r.token = d.value("token", "");
-        if (d.contains("user")) r.username = d["user"].value("username", "");
-        if (d.contains("license")) {
+        if (d.contains("user") && d["user"].is_object())
+            r.username = d["user"].value("username", "");
+        if (d.contains("license") && d["license"].is_object()) {
             r.expiration = d["license"].value("expiration", "");
-            r.daysLeft = d["license"].value("daysLeft", 0);
+            if (d["license"].contains("daysLeft") && d["license"]["daysLeft"].is_number_integer())
+                r.daysLeft = d["license"]["daysLeft"].get<int>();
         }
     }
     return r;
 }
 
+// ============================================================
+// Public methods
+// ============================================================
 bool Auth::Initialize(std::string& error) {
     long code = 0; std::string body, err;
     if (!Request("POST", "/api/v1/init", "{}", code, body, err)) { error = err; return false; }
@@ -151,8 +181,12 @@ bool Auth::Initialize(std::string& error) {
     return true;
 }
 
-AuthResult Auth::Register(const std::string& username, const std::string& password, const std::string& licenseKey, const std::string& pcName) {
-    json p = { {"username", username}, {"password", password}, {"licenseKey", licenseKey}, {"hwid", GenerateHWID()}, {"pcName", pcName} };
+AuthResult Auth::Register(const std::string& username, const std::string& password,
+                          const std::string& licenseKey, const std::string& pcName) {
+    json p = {
+        {"username", username}, {"password", password}, {"licenseKey", licenseKey},
+        {"hwid", GenerateHWID()}, {"pcName", pcName}
+    };
     long code = 0; std::string body, err;
     AuthResult r;
     if (!Request("POST", "/api/v1/auth/register", p.dump(), code, body, err)) { r.message = err; return r; }
@@ -198,4 +232,5 @@ std::string Auth::GetVariable(const std::string& name) {
         return j["data"]["global"][name].get<std::string>();
     return "";
 }
-}
+
+} // namespace Spectre
