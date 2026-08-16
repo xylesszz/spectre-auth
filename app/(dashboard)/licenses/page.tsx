@@ -1,75 +1,164 @@
 import { db } from '@/lib/db';
 import { getAdminSession } from '@/lib/session';
 import { redirect } from 'next/navigation';
-import { generateLicenseAction, revokeLicenseAction } from '@/actions/licenses';
+import Link from 'next/link';
+import { PageHeader, Card, Badge, Th, Td, TableShell, btn, input } from '@/components/ui';
+import { ClientForm } from '@/components/client';
+import { generateLicenses } from '@/actions/licenses';
 
-const formatDate = (date: Date | null) => {
-  if (!date) return 'Never';
-  return new Intl.DateTimeFormat('pt-BR', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
-};
-
-export default async function LicensesPage() {
+export default async function LicensesPage({ searchParams }: { searchParams: Record<string, string | undefined> }) {
   const session = await getAdminSession();
   if (!session) redirect('/login');
 
-  const licenses = await db.license.findMany({
-    include: { app: true, user: true },
-    orderBy: { createdAt: 'desc' },
-    take: 50,
-  });
+  const q = searchParams.q ?? '';
+  const status = searchParams.status;
+  const app = searchParams.app;
+
+  const where: any = {};
+  if (q) {
+    where.OR = [
+      { key: { contains: q.toUpperCase() } },
+      { id: { contains: q } },
+      { user: { username: { contains: q, mode: 'insensitive' } } },
+    ];
+  }
+  if (status) where.status = status;
+  if (app) where.appId = app;
+
+  const [licenses, apps] = await db.$transaction([
+    db.license.findMany({
+      where,
+      include: { app: true, user: true },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    }),
+    db.application.findMany({ orderBy: { name: 'asc' } }),
+  ]);
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold text-white">Licenses</h1>
-        <form action={generateLicenseAction}>
-          <button type="submit" className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md text-sm font-medium transition-colors">
-            Generate License
-          </button>
-        </form>
-      </div>
+    <div className="space-y-6">
+      <PageHeader title="Licenses" subtitle={`${licenses.length} licenses`} />
 
-      <div className="bg-[#0a0a0a] border border-gray-800 rounded-lg overflow-hidden">
-        <table className="w-full text-sm text-left text-gray-400">
-          <thead className="text-xs text-gray-500 uppercase bg-[#111] border-b border-gray-800">
-            <tr>
-              <th className="px-6 py-3">Key</th>
-              <th className="px-6 py-3">App</th>
-              <th className="px-6 py-3">Status</th>
-              <th className="px-6 py-3">User</th>
-              <th className="px-6 py-3">Expires</th>
-              <th className="px-6 py-3">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {licenses.map((lic) => (
-              <tr key={lic.id} className="bg-[#0a0a0a] border-b border-gray-800 hover:bg-[#111]">
-                <td className="px-6 py-4 font-mono text-xs text-gray-300">{lic.key}</td>
-                <td className="px-6 py-4">{lic.app.name}</td>
-                <td className="px-6 py-4">
-                  <span className={`px-2 py-1 rounded text-xs ${
-                    lic.status === 'ACTIVE' ? 'bg-green-900/30 text-green-400' : 
-                    lic.status === 'UNUSED' ? 'bg-blue-900/30 text-blue-400' : 
-                    lic.status === 'EXPIRED' ? 'bg-yellow-900/30 text-yellow-400' : 
-                    'bg-red-900/30 text-red-400'
-                  }`}>
-                    {lic.status}
-                  </span>
-                </td>
-                <td className="px-6 py-4">{lic.user?.username || '-'}</td>
-                <td className="px-6 py-4">{formatDate(lic.expiresAt)}</td>
-                <td className="px-6 py-4">
-                  {lic.status !== 'REVOKED' && (
-                    <form action={revokeLicenseAction.bind(null, lic.id)} className="inline">
-                      <button type="submit" className="text-red-500 hover:text-red-400 text-xs font-medium">Revoke</button>
-                    </form>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {/* Search + Filters (server-side) */}
+      <form className="flex flex-wrap gap-3">
+        <input name="q" defaultValue={q} placeholder="Search key / ID / username" className={`${input} max-w-md`} />
+        <select name="status" defaultValue={status ?? ''} className={`${input} w-40`}>
+          <option value="">All statuses</option>
+          {['UNUSED', 'ACTIVE', 'EXPIRED', 'REVOKED', 'SUSPENDED', 'BANNED'].map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+        <select name="app" defaultValue={app ?? ''} className={`${input} w-48`}>
+          <option value="">All applications</option>
+          {apps.map((a) => (
+            <option key={a.id} value={a.id}>{a.name}</option>
+          ))}
+        </select>
+        <button className={btn.primary}>Filter</button>
+      </form>
+
+      {/* License Generator */}
+      <Card title="License Generator (cryptographically secure keys)">
+        <ClientForm
+          submitLabel="Generate"
+          fn={generateLicenses}
+          cols="grid-cols-2 md:grid-cols-4"
+          fields={[
+            {
+              name: 'appId',
+              label: 'Application (optional)',
+              type: 'select',
+              options: [
+                { value: '', label: '— none (general) —' },
+                ...apps.map((a) => ({ value: a.id, label: a.name })),
+              ],
+            },
+            {
+              name: 'mode',
+              label: 'Mode',
+              type: 'select',
+              default: 'random',
+              options: [
+                { value: 'random', label: 'Random keys' },
+                { value: 'custom', label: 'Custom keys' },
+              ],
+            },
+            { name: 'quantity', label: 'Quantity (1-500)', type: 'number', default: '1' },
+            {
+              name: 'duration',
+              label: 'Duration',
+              type: 'select',
+              default: '30',
+              options: ['1', '3', '7', '14', '30', '60', '90', '180', '365']
+                .map((d) => ({ value: d, label: `${d} Days` }))
+                .concat([{ value: 'lifetime', label: 'Lifetime' }]),
+            },
+            { name: 'maxActivations', label: 'Max Activations', type: 'number', default: '1' },
+            { name: 'prefix', label: 'Prefix (optional)', type: 'text', placeholder: 'SPC' },
+            {
+              name: 'separator',
+              label: 'Separator',
+              type: 'select',
+              default: 'dash',
+              options: [
+                { value: 'dash', label: 'Dash (XXXX-XXXX-XXXX-XXXX)' },
+                { value: 'none', label: 'None (XXXXXXXXXXXXXXXX)' },
+              ],
+            },
+            {
+              name: 'customKeys',
+              label: 'Custom keys (one per line — letters/numbers/dashes only)',
+              type: 'textarea',
+              placeholder: 'SPC-AB12-CD34-EF56\nMYKEY2026A',
+            },
+          ]}
+        />
+      </Card>
+
+      {/* Licenses Table */}
+      <TableShell
+        colSpan={7}
+        empty={licenses.length === 0}
+        head={
+          <>
+            <Th>Key</Th>
+            <Th>Status</Th>
+            <Th>Application</Th>
+            <Th>User</Th>
+            <Th>Expiration</Th>
+            <Th>Activations</Th>
+            <Th></Th>
+          </>
+        }
+      >
+        {licenses.map((l) => (
+          <tr key={l.id} className="hover:bg-[#111] transition-colors">
+            <Td className="font-mono text-xs text-gray-300">{l.key}</Td>
+            <Td><Badge status={l.status} /></Td>
+            <Td>{l.app?.name ?? <span className="text-gray-600">General</span>}</Td>
+            <Td>
+              {l.user ? (
+                <Link className="text-red-400 hover:text-red-300 transition-colors" href={`/users/${l.user.id}`}>
+                  {l.user.username}
+                </Link>
+              ) : (
+                '—'
+              )}
+            </Td>
+            <Td className="text-xs">
+              {l.expiresAt ? (
+                new Date(l.expiresAt).toLocaleDateString('pt-BR')
+              ) : (
+                <span className="text-purple-400">Lifetime</span>
+              )}
+            </Td>
+            <Td className="text-xs">{l.activationCount}/{l.maxActivations}</Td>
+            <Td>
+              <Link href={`/licenses/${l.id}`} className={btn.blue}>Manage</Link>
+            </Td>
+          </tr>
+        ))}
+      </TableShell>
     </div>
   );
 }

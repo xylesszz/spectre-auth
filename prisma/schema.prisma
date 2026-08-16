@@ -10,6 +10,7 @@ datasource db {
 enum UserStatus {
   ACTIVE
   DISABLED
+  BANNED
 }
 
 enum LicenseStatus {
@@ -18,11 +19,13 @@ enum LicenseStatus {
   EXPIRED
   REVOKED
   SUSPENDED
+  BANNED
 }
 
 enum AppStatus {
   ACTIVE
   DISABLED
+  PAUSED
 }
 
 enum CredentialStatus {
@@ -30,13 +33,30 @@ enum CredentialStatus {
   REVOKED
 }
 
+enum RuleType {
+  IP
+  HWID
+  USER
+  LICENSE
+}
+
+enum RuleKind {
+  BLACKLIST
+  WHITELIST
+}
+
+enum TokenStatus {
+  ACTIVE
+  REVOKED
+}
+
 model Admin {
-  id            String         @id @default(cuid())
-  email         String         @unique
-  passwordHash  String
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  sessions      AdminSession[]
+  id           String         @id @default(cuid())
+  email        String         @unique
+  passwordHash String
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  sessions     AdminSession[]
 }
 
 model AdminSession {
@@ -52,105 +72,196 @@ model AdminSession {
   @@index([adminId])
 }
 
-model User {
-  id           String        @id @default(cuid())
-  username     String        @unique
-  email        String?       @unique
-  passwordHash String?
-  status       UserStatus    @default(ACTIVE)
-  hwidHash     String?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  lastLoginAt  DateTime?
-  lastIp       String?
-  licenses     License[]
-  sessions     UserSession[]
-}
-
-model UserSession {
-  id           String   @id @default(cuid())
-  userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  expiresAt    DateTime
-  createdAt    DateTime @default(now())
-  lastActivity DateTime @default(now())
-  ip           String?
-  userAgent    String?
-
-  @@index([userId])
-}
-
 model Application {
-  id          String                @id @default(cuid())
-  name        String
-  slug        String                @unique
-  status      AppStatus             @default(ACTIVE)
-  version     String?
-  description String?
-  createdAt   DateTime              @default(now())
-  updatedAt   DateTime              @updatedAt
-  licenses    License[]
-  credentials ApplicationCredential[]
+  id                       String                  @id @default(cuid())
+  name                     String
+  slug                     String                  @unique
+  status                   AppStatus               @default(ACTIVE)
+  version                  String?                 @default("1.0.0")
+  description              String?
+  hwidLock                 Boolean                 @default(true)
+  forceHwid                Boolean                 @default(false)
+  vpnBlock                 Boolean                 @default(false)
+  minHwidLength            Int                     @default(10)
+  hwidResetCooldownMinutes Int                     @default(0)
+  sessionExpirationMinutes Int                     @default(60)
+  minUsernameLength        Int                     @default(3)
+  maintenanceMode          Boolean                 @default(false)
+  lastApiActivity          DateTime?
+  createdAt                DateTime                @default(now())
+  updatedAt                DateTime                @updatedAt
+  licenses                 License[]
+  credentials              ApplicationCredential[]
+  users                    User[]
+  tokens                   AppToken[]
+  variables                AppVariable[]
+  rules                    BlacklistRule[]
+  sessions                 UserSession[]
 }
 
 model ApplicationCredential {
-  id            String           @id @default(cuid())
-  appId         String
-  app           Application      @relation(fields: [appId], references: [id], onDelete: Cascade)
-  publicId      String           @unique
-  secretHash    String
-  status        CredentialStatus @default(ACTIVE)
-  createdAt     DateTime         @default(now())
-  lastUsedAt    DateTime?
-  revokedAt     DateTime?
+  id         String           @id @default(cuid())
+  appId      String
+  app        Application      @relation(fields: [appId], references: [id], onDelete: Cascade)
+  publicId   String           @unique
+  secretHash String
+  status     CredentialStatus @default(ACTIVE)
+  createdAt  DateTime         @default(now())
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
 
   @@index([appId])
 }
 
+model User {
+  id              String        @id @default(cuid())
+  username        String        @unique
+  email           String?
+  passwordHash    String?
+  status          UserStatus    @default(ACTIVE)
+  appId           String?
+  app             Application?  @relation(fields: [appId], references: [id], onDelete: SetNull)
+  hwidHash        String?
+  pcName          String?
+  banReason       String?
+  bannedUntil     DateTime?
+  lastHwidResetAt DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  lastLoginAt     DateTime?
+  lastIp          String?
+  licenses        License[]
+  sessions        UserSession[]
+  variables       UserVariable[]
+}
+
+model UserSession {
+  id           String       @id @default(cuid())
+  tokenHash    String       @unique
+  userId       String
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appId        String?
+  app          Application? @relation(fields: [appId], references: [id], onDelete: Cascade)
+  hwidHash     String?
+  pcName       String?
+  ip           String?
+  userAgent    String?
+  createdAt    DateTime     @default(now())
+  lastActivity DateTime     @default(now())
+  expiresAt    DateTime
+
+  @@index([userId])
+  @@index([appId])
+}
+
 model License {
-  id             String        @id @default(cuid())
-  key            String        @unique
-  status         LicenseStatus @default(UNUSED)
-  appId          String
-  app            Application   @relation(fields: [appId], references: [id], onDelete: Restrict)
-  userId         String?
-  user           User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
-  createdAt      DateTime      @default(now())
-  activatedAt    DateTime?
-  expiresAt      DateTime?
-  durationDays   Int?
-  maxActivations Int           @default(1)
-  activationCount Int          @default(0)
+  id              String              @id @default(cuid())
+  key             String              @unique
+  status          LicenseStatus       @default(UNUSED)
+  appId           String?
+  app             Application?        @relation(fields: [appId], references: [id], onDelete: SetNull)
+  userId          String?
+  user            User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt       DateTime            @default(now())
+  activatedAt     DateTime?
+  expiresAt       DateTime?
+  durationDays    Int?
+  maxActivations  Int                 @default(1)
+  activationCount Int                 @default(0)
   lastValidationAt DateTime?
-  revokedAt      DateTime?
-  hwidHash       String?
-  metadata       Json?
-  activations    LicenseActivation[]
+  lastIp          String?
+  revokedAt       DateTime?
+  hwidHash        String?
+  note            String?
+  metadata        Json?
+  activations     LicenseActivation[]
+}
+
+model RateLimitEntry {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  count     Int      @default(0)
+  expiresAt DateTime
 }
 
 model LicenseActivation {
-  id          String   @id @default(cuid())
-  licenseId   String
-  license     License  @relation(fields: [licenseId], references: [id], onDelete: Cascade)
-  hwidHash    String?
-  ip          String?
-  userAgent   String?
-  createdAt   DateTime @default(now())
+  id        String   @id @default(cuid())
+  licenseId String
+  license   License  @relation(fields: [licenseId], references: [id], onDelete: Cascade)
+  hwidHash  String?
+  pcName    String?
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
 
   @@index([licenseId])
 }
 
+model BlacklistRule {
+  id        String    @id @default(cuid())
+  appId     String?
+  app       Application? @relation(fields: [appId], references: [id], onDelete: Cascade)
+  type      RuleType
+  kind      RuleKind  @default(BLACKLIST)
+  value     String
+  reason    String?
+  createdBy String?
+  createdAt DateTime  @default(now())
+  expiresAt DateTime?
+  active    Boolean   @default(true)
+
+  @@index([type, value])
+  @@index([appId])
+}
+
+model AppToken {
+  id         String      @id @default(cuid())
+  appId      String
+  app        Application @relation(fields: [appId], references: [id], onDelete: Cascade)
+  name       String
+  tokenHash  String      @unique
+  status     TokenStatus @default(ACTIVE)
+  createdAt  DateTime    @default(now())
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+
+  @@index([appId])
+}
+
+model AppVariable {
+  id        String      @id @default(cuid())
+  appId     String
+  app       Application @relation(fields: [appId], references: [id], onDelete: Cascade)
+  name      String
+  value     String
+  createdAt DateTime    @default(now())
+
+  @@unique([appId, name])
+}
+
+model UserVariable {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  value     String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, name])
+}
+
 model AuditLog {
-  id          String   @id @default(cuid())
-  action      String
-  entityType  String?
-  entityId    String?
-  actorId     String?
-  actorType   String?
-  ip          String?
-  metadata    Json?
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  action     String
+  entityType String?
+  entityId   String?
+  actorId    String?
+  actorType  String?
+  ip         String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
 
   @@index([entityType, entityId])
   @@index([actorId])
+  @@index([action])
 }

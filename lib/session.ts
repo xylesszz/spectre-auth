@@ -3,7 +3,8 @@ import { cookies } from 'next/headers';
 import { cache } from 'react';
 
 export const getAdminSession = cache(async () => {
-  const sessionId = cookies().get('spectre_admin_session')?.value;
+  const cookieStore = cookies();
+  const sessionId = cookieStore.get('spectre_admin_session')?.value;
   if (!sessionId) return null;
 
   const session = await db.adminSession.findUnique({
