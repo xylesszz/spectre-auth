@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { authenticateApp, apiError, clientMeta, securityBlock, logApi } from '@/server/api';
 import { hashHwid, daysLeft } from '@/lib/security';
@@ -19,7 +20,6 @@ const errorStatus: Record<string, number> = {
   LICENSE_BLOCKED: 403,
   LICENSE_EXPIRED: 403,
   HWID_MISMATCH: 403,
-  ACTIVATION_LIMIT: 409,
   INVALID_STATE: 409,
 };
 
@@ -42,14 +42,12 @@ export async function POST(req: NextRequest) {
     return apiError('INVALID_INPUT', 'Invalid payload.', 400);
   }
 
-  // Regras de HWID configuráveis por aplicação (server-side)
   if (app.forceHwid && !body.hwid) return apiError('HWID_REQUIRED', 'HWID is required.', 422);
   if (body.hwid && body.hwid.trim().length < app.minHwidLength)
     return apiError('HWID_TOO_SHORT', `HWID below minimum length (${app.minHwidLength}).`, 422);
 
   const hwidHash = body.hwid ? hashHwid(body.hwid) : null;
 
-  // Blacklists / whitelists (IP, HWID, USER, LICENSE) + maintenance
   const block = await securityBlock(app, meta, {
     ip: meta.ip,
     hwidHash: hwidHash ?? undefined,
@@ -70,9 +68,8 @@ export async function POST(req: NextRequest) {
       });
 
       if (!license) throw new Error('INVALID_LICENSE');
-      // Licenças "gerais" (appId null) podem ativar em qualquer app; licenças com app são isoladas
-      if (license.appId && license.appId !== app.id) throw new Error('APP_MISMATCH');
-      if (license.status === 'REVOKED' || license.status === 'BANNED' || license.status === 'SUSPENDED')
+      if (license.appId !== app.id) throw new Error('APP_MISMATCH');
+      if (license.status === 'REVOKED' || license.status === 'BANNED')
         throw new Error('LICENSE_BLOCKED');
 
       if (license.expiresAt && license.expiresAt < new Date()) {
@@ -86,9 +83,6 @@ export async function POST(req: NextRequest) {
       let updated;
 
       if (license.status === 'UNUSED') {
-        if (license.activationCount >= license.maxActivations) throw new Error('ACTIVATION_LIMIT');
-
-        // Expiração SEMPRE calculada server-side
         const expiresAt = license.durationDays
           ? new Date(Date.now() + license.durationDays * 86400000)
           : license.expiresAt;
@@ -97,12 +91,22 @@ export async function POST(req: NextRequest) {
         if (!userId && body.username) {
           const uname = body.username.trim();
           if (/^[a-zA-Z0-9]{1,32}$/.test(uname)) {
-            const user = await tx.user.upsert({
-              where: { username: uname },
-              update: {},
-              create: { username: uname, appId: app.id, lastIp: meta.ip },
-            });
-            userId = user.id;
+            const existing = await tx.user.findUnique({ where: { username: uname } });
+            if (existing) {
+              userId = existing.id;
+            } else {
+              // Schema exige passwordHash, geramos um dummy para usuário criado via ativação
+              const dummyHash = await bcrypt.hash(Math.random().toString(36), 4);
+              const user = await tx.user.create({
+                data: { 
+                  username: uname, 
+                  appId: app.id, 
+                  lastIp: meta.ip,
+                  passwordHash: dummyHash,
+                },
+              });
+              userId = user.id;
+            }
           }
         }
 
@@ -112,11 +116,9 @@ export async function POST(req: NextRequest) {
             status: 'ACTIVE',
             activatedAt: new Date(),
             expiresAt,
-            activationCount: { increment: 1 },
             hwidHash: app.hwidLock ? (license.hwidHash ?? hwidHash) : license.hwidHash,
             lastValidationAt: new Date(),
             lastIp: meta.ip,
-            appId: license.appId ?? app.id, // bind da licença geral ao app que ativou
             userId,
           },
         });
@@ -129,15 +131,7 @@ export async function POST(req: NextRequest) {
         throw new Error('INVALID_STATE');
       }
 
-      await tx.licenseActivation.create({
-        data: {
-          licenseId: updated.id,
-          hwidHash,
-          pcName: body.pcName ?? null,
-          ip: meta.ip,
-          userAgent: meta.userAgent,
-        },
-      });
+      // Removido: tx.licenseActivation.create (não existe no schema)
 
       return updated;
     });

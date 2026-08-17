@@ -15,12 +15,31 @@ export async function POST(req: NextRequest) {
   try { body = schema.parse(await req.json()); }
   catch { return apiError('INVALID_INPUT', 'Invalid payload.', 400); }
 
-  const token = await db.appToken.findUnique({ where: { tokenHash: hashToken(body.token) } });
-  if (!token || token.appId !== app.id || token.status !== 'ACTIVE') {
+  // Usa ApplicationCredential em vez do extinto appToken
+  // Como não temos o publicId aqui, buscamos pelo hash do secret
+  const token = await db.applicationCredential.findFirst({ 
+    where: { 
+      secretHash: hashToken(body.token),
+      appId: app.id,
+      status: 'ACTIVE'
+    } 
+  });
+  
+  if (!token) {
     await logApi('API_TOKEN_INVALID', app, meta);
     return apiError('INVALID_TOKEN', 'Token invalid or revoked.', 403);
   }
 
-  await db.appToken.update({ where: { id: token.id }, data: { lastUsedAt: new Date() } });
-  return NextResponse.json({ success: true, data: { name: token.name, valid: true } });
+  await db.applicationCredential.update({ 
+    where: { id: token.id }, 
+    data: { lastUsedAt: new Date() } 
+  });
+  
+  return NextResponse.json({ 
+    success: true, 
+    data: { 
+      publicId: token.publicId, 
+      valid: true 
+    } 
+  });
 }

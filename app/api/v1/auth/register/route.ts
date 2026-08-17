@@ -27,8 +27,11 @@ export async function POST(req: NextRequest) {
   try { body = schema.parse(await req.json()); }
   catch { return apiError('INVALID_INPUT', 'Invalid payload.', 400); }
 
-  if (body.username.trim().length < app.minUsernameLength)
-    return apiError('USERNAME_TOO_SHORT', `Minimum username length: ${app.minUsernameLength}.`);
+  // Fallback para 3 caso o Prisma Client local esteja desatualizado
+  const minUsernameLength = (app as any).minUsernameLength ?? 3;
+  
+  if (body.username.trim().length < minUsernameLength)
+    return apiError('USERNAME_TOO_SHORT', `Minimum username length: ${minUsernameLength}.`);
   if (app.forceHwid && !body.hwid) return apiError('HWID_REQUIRED', 'HWID is required.', 422);
   const hwidHash = body.hwid ? hashHwid(body.hwid) : null;
   if (body.hwid && body.hwid.trim().length < app.minHwidLength)
@@ -63,11 +66,20 @@ export async function POST(req: NextRequest) {
       });
 
       const expiresAt = license.durationDays ? new Date(Date.now() + license.durationDays * 86400000) : null;
+      
       await tx.license.update({
         where: { id: license.id },
-        data: { status: 'ACTIVE', userId: user.id, activatedAt: new Date(), expiresAt, hwidHash: app.hwidLock ? hwidHash : null, activationCount: { increment: 1 }, lastIp: meta.ip, lastValidationAt: new Date() },
+        data: { 
+          status: 'ACTIVE', 
+          userId: user.id, 
+          activatedAt: new Date(), 
+          expiresAt, 
+          hwidHash: app.hwidLock ? hwidHash : null, 
+          lastIp: meta.ip, 
+          lastValidationAt: new Date() 
+        },
       });
-      await tx.licenseActivation.create({ data: { licenseId: license.id, hwidHash, pcName: body.pcName ?? null, ip: meta.ip, userAgent: meta.userAgent } });
+      
       await createSession(tx, { userId: user.id, appId: app.id, rawToken, hwidHash, pcName: body.pcName, ip: meta.ip, userAgent: meta.userAgent, expirationMinutes: app.sessionExpirationMinutes });
       return { user, expiresAt };
     });

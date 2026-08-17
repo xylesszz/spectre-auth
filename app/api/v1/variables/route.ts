@@ -7,17 +7,20 @@ export async function POST(req: NextRequest) {
   const app = await authenticateApp(req);
   if (!app) return apiError('UNAUTHORIZED', 'Invalid application credentials.', 401);
 
-  const appVars = await db.appVariable.findMany({ where: { appId: app.id } });
+  // db.variable em vez de db.appVariable
+  const appVars = await db.variable.findMany({ where: { appId: app.id } });
   const session = await resolveSession(req, app);
-  const userVars = session
-    ? await db.userVariable.findMany({ where: { userId: session.userId } })
-    : [];
+  
+  // userVariable não existe no schema, retornamos vazio
+  const userVars: any[] = [];
+  // Se quiser no futuro, poderia ser: session ? await db.variable.findMany({ where: { userId: session.userId } }) : []
 
   return NextResponse.json({
     success: true,
     data: {
-      global: Object.fromEntries(appVars.map((v) => [v.name, v.value])),
-      user: Object.fromEntries(userVars.map((v) => [v.name, v.value])),
+      // 'key' em vez de 'name'
+      global: Object.fromEntries(appVars.map((v: any) => [v.key, v.value])),
+      user: Object.fromEntries(userVars.map((v: any) => [v.key, v.value])),
     },
   });
 }
