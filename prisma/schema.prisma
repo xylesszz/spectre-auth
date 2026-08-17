@@ -21,7 +21,6 @@ model Application {
   name                   String
   slug                   String        @unique
   appId                  String        @unique @map("app_id")
-  // appSecret REMOVIDO – agora usamos ApplicationCredential
   status                 AppStatus     @default(ACTIVE)
   version                String?
   description            String?

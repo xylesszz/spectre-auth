@@ -4,16 +4,16 @@ import { redirect, notFound } from 'next/navigation';
 import Link from 'next/link';
 import { PageHeader, Card, Badge, btn, input, label, Th, Td, TableShell } from '@/components/ui';
 import { ActionForm } from '@/components/client';
-import { 
-  deleteUser, 
-  banUser, 
-  unbanUser, 
-  setUserStatus, 
-  resetUserHwid, 
-  revokeUserSessions, 
+import {
+  deleteUser,
+  banUser,
+  unbanUser,
+  setUserStatus,
+  resetUserHwid,
+  revokeUserSessions,
   resetUserPassword,
-  setUserVariable,
-  deleteUserVariable
+  // setUserVariable,   // ← removido – não existe mais
+  // deleteUserVariable // ← removido – não existe mais
 } from '@/actions/users';
 
 export default async function UserDetailsPage({ params }: { params: { id: string } }) {
@@ -22,19 +22,18 @@ export default async function UserDetailsPage({ params }: { params: { id: string
 
   const user = await db.user.findUnique({
     where: { id: params.id },
-    include: { 
-      app: true, 
-      licenses: { include: { app: true }, orderBy: { createdAt: 'desc' } }, 
-      sessions: { orderBy: { lastActivity: 'desc' }, take: 10 } 
-      // Removido: variables: true (não existe no schema)
+    include: {
+      app: true,
+      licenses: { include: { app: true }, orderBy: { createdAt: 'desc' } },
+      sessions: { orderBy: { lastActivity: 'desc' }, take: 10 }
     },
   });
   if (!user) notFound();
 
-  const history = await db.auditLog.findMany({ 
-    where: { metadata: { path: ['username'], equals: user.username } }, 
-    orderBy: { createdAt: 'desc' }, 
-    take: 10 
+  const history = await db.auditLog.findMany({
+    where: { metadata: { path: ['username'], equals: user.username } },
+    orderBy: { createdAt: 'desc' },
+    take: 10
   }).catch(() => []);
 
   return (
@@ -52,7 +51,6 @@ export default async function UserDetailsPage({ params }: { params: { id: string
         <Card title="Information">
           <div className="space-y-2 text-sm">
             <div className="flex justify-between"><span className="text-gray-500">Application</span><span className="text-white">{user.app?.name ?? '—'}</span></div>
-            {/* Removido Email pois não existe no schema */}
             <div className="flex justify-between"><span className="text-gray-500">Created</span><span className="text-white">{new Date(user.createdAt).toLocaleString('pt-BR')}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Last Login</span><span className="text-white">{user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString('pt-BR') : '—'}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Last IP</span><span className="text-white font-mono text-xs">{user.lastIp ?? '—'}</span></div>
@@ -79,16 +77,15 @@ export default async function UserDetailsPage({ params }: { params: { id: string
             <ActionForm action={resetUserHwid.bind(null, user.id)} confirmText="Reset HWID for this user?"><button className={`${btn.blue} w-full`}>Reset HWID</button></ActionForm>
             <ActionForm action={revokeUserSessions.bind(null, user.id)} confirmText="Revoke all sessions?"><button className={`${btn.yellow} w-full`}>Revoke Sessions</button></ActionForm>
             <form action={resetUserPassword.bind(null, user.id)} className="col-span-2 space-y-2">
-              <input name="password" type="password" placeholder="New password (min 6)" className={input} required minLength={6} />
+              <input name="password" type="password" placeholder="New password (min 8)" className={input} required minLength={8} />
               <button className={`${btn.gray} w-full`}>Reset Password</button>
             </form>
           </div>
         </Card>
 
-        {/* Card de Variáveis removido temporariamente pois o modelo não existe no schema */}
-        {/* Se quiser adicionar, crie o modelo UserVariable no prisma/schema.prisma */}
+        {/* Card de Variáveis removido – funcionalidade não suportada */}
         <Card title="Notes">
-           <p className="text-gray-500 text-sm">User variables feature requires database schema update.</p>
+          <p className="text-gray-500 text-sm">User variables feature requires database schema update.</p>
         </Card>
       </div>
 

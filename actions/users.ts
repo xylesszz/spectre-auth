@@ -123,3 +123,15 @@ export async function createUser(formData: FormData) {
 
   revalidatePath('/users');
 }
+
+export async function setUserVariable(userId: string, formData: FormData) {
+  if (!validateCsrf()) throw new Error('CSRF validation failed');
+  await admin();
+  throw new Error('User variables are not supported by the current schema');
+}
+
+export async function deleteUserVariable(userId: string, variableId: string) {
+  if (!validateCsrf()) throw new Error('CSRF validation failed');
+  await admin();
+  throw new Error('User variables are not supported by the current schema');
+}
