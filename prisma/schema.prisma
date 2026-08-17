@@ -16,31 +16,33 @@ model Admin {
 }
 
 model Application {
-  id          String   @id @default(cuid())
-  name        String
-  slug        String   @unique
+  id                     String        @id @default(cuid())
+  name                   String
+  slug                   String        @unique
+  appId                  String        @unique @map("app_id")
+  appSecret              String        @map("app_secret")
+  status                 AppStatus     @default(ACTIVE)
+  version                String?
+  description            String?
   
-  // ESTES DOIS CAMPOS DEVEM EXISTIR AQUI:
-  appId       String   @unique @map("app_id")
-  appSecret   String   @map("app_secret")
-  
-  status      AppStatus @default(ACTIVE)
-  version     String?
-  description String?
-  hwidLock    Boolean  @default(true)
-  forceHwid   Boolean  @default(false)
-  vpnBlock    Boolean  @default(false)
-  minHwidLength Int    @default(16)
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  // --- ADICIONE ESTAS LINHAS ABAIXO ---
+  hwidLock               Boolean       @default(true)
+  forceHwid              Boolean       @default(false)
+  vpnBlock               Boolean       @default(false)
+  maintenanceMode        Boolean       @default(false)
+  minHwidLength          Int           @default(16)
+  sessionExpirationMinutes Int         @default(1440)
+  // ------------------------------------
 
-  users       User[]
-  licenses    License[]
-  sessions    Session[]
-  variables   Variable[]
-  credentials ApplicationCredential[]
-  blacklistRules BlacklistRule[]
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+
+  users                  User[]
+  licenses               License[]
+  sessions               Session[]
+  variables              Variable[]
+  credentials            ApplicationCredential[]
+  blacklistRules         BlacklistRule[]
 
   @@map("applications")
 }
