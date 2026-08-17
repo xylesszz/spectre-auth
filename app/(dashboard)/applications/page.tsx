@@ -34,7 +34,7 @@ export default async function ApplicationsPage() {
             <Td>{app.version}</Td>
             <Td>{app._count.users}</Td>
             <Td>{app._count.licenses}</Td>
-            <Td className="text-xs">{app.lastApiActivity ? new Date(app.lastApiActivity).toLocaleString('pt-BR') : '—'}</Td>
+            <Td className="text-xs">{new Date(app.updatedAt).toLocaleString('pt-BR')}</Td>
             <Td>
               <div className="flex gap-2 justify-end flex-wrap">
                 <Link href={`/applications/${app.id}`} className={btn.blue}>Settings</Link>

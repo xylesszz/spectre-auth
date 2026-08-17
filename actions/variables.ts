@@ -91,3 +91,12 @@ export async function setAppVariable(fd: FormData) {
 
   revalidatePath('/variables');
 }
+
+export async function deleteAppVariable(id: string) {
+  const session = await getAdminSession();
+  if (!session) throw new Error('Unauthorized');
+
+  await db.variable.delete({ where: { id } });
+
+  revalidatePath('/variables');
+}

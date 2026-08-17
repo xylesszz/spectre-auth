@@ -92,3 +92,27 @@ export async function deleteUserVariable(varId: string) {
   // revalidatePath precisa do userId, mas aqui só temos varId. 
   // Em um sistema real, buscaríamos a variável primeiro.
 }
+
+export async function createUser(formData: FormData) {
+  const session = await getAdminSession();
+  if (!session) throw new Error('Unauthorized');
+
+  const username = formData.get('username') as string;
+  const password = formData.get('password') as string;
+  const appId = formData.get('appId') as string;
+
+  if (!username || !password || !appId) throw new Error('Missing fields');
+
+  const hash = await bcrypt.hash(password, 12);
+
+  await db.user.create({
+    data: {
+      username,
+      passwordHash: hash,
+      appId,
+      status: 'ACTIVE',
+    },
+  });
+
+  revalidatePath('/users');
+}
