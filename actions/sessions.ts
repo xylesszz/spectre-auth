@@ -28,3 +28,19 @@ export async function revokeSession(sessionId: string) {
 
   revalidatePath('/sessions');
 }
+
+export async function cleanupExpiredSessions() {
+  const s = await getAdminSession();
+  if (!s) throw new Error('Unauthorized');
+
+  // Deleta sessões expiradas
+  await db.session.deleteMany({
+    where: {
+      expiresAt: {
+        lt: new Date()
+      }
+    }
+  });
+
+  revalidatePath('/sessions');
+}
