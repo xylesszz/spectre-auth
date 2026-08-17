@@ -1,4 +1,4 @@
-// Schema seguro para SPECTRE AUTH
+// Schema seguro e corrigido para SPECTRE AUTH
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,66 +8,196 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ============================================================
+// ADMIN (Para o login do painel web via chave fixa)
+// ============================================================
+model Admin {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String   // Hash da chave de acesso (bcrypt)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// ============================================================
+// APPLICATIONS (Projetos / Loaders)
+// ============================================================
 model Application {
-  id        String   @id @default(cuid())
-  name      String
-  appId     String   @unique // Público
-  appSecret String   // Hashed (bcrypt/argon2)
-  createdAt DateTime @default(now())
-  licenses  License[]
-  variables Variable[]
+  id          String              @id @default(cuid())
+  name        String
+  appId       String              @unique // Public ID (ex: pub_xxx)
+  appSecret   String              // Secret Hashed (ex: sk_live_xxx)
+  status      String              @default("ACTIVE") // ACTIVE, DISABLED
+  maintenance Boolean             @default(false)
+  
+  // Configurações de Segurança
+  hwidLock    Boolean             @default(true)
+  minHwidLength Int               @default(16)
+  sessionExpirationMinutes Int    @default(1440) // 24 horas
+  
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  // Relações Inversas (Obrigatórias para o Prisma)
+  users       User[]
+  licenses    License[]
+  sessions    Session[]
+  variables   Variable[]
+  credentials ApplicationCredential[]
 }
 
-model User {
-  id        String    @id @default(cuid())
-  username  String    @unique
-  password  String    // Hashed (Argon2id)
-  hwid      String?   // Hashed
-  ip        String?
-  status    String    @default("ACTIVE") // ACTIVE, BANNED, LOCKED
-  appId     String
-  app       Application @relation(fields: [appId], references: [id])
-  sessions  Session[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-}
-
-model License {
-  id         String   @id @default(cuid())
-  key        String   @unique // Cryptographically secure random
+// ============================================================
+// CREDENTIALS (Rotação de chaves da API)
+// ============================================================
+model ApplicationCredential {
+  id         String      @id @default(cuid())
+  publicId   String      @unique
+  secretHash String
+  status     String      @default("ACTIVE")
   appId      String
-  app        Application @relation(fields: [appId], references: [id])
-  userId     String?  // Null if unassigned
-  user       User?    @relation(fields: [userId], references: [id])
-  expiresAt  DateTime
-  status     String   @default("INACTIVE") // INACTIVE, ACTIVE, REVOKED
-  hwid       String?  // Bound HWID hash
-  createdAt  DateTime @default(now())
+  app        Application @relation(fields: [appId], references: [id], onDelete: Cascade)
+  lastUsedAt DateTime?
+  createdAt  DateTime    @default(now())
 }
 
+// ============================================================
+// USERS (Usuários finais do loader)
+// ============================================================
+model User {
+  id           String      @id @default(cuid())
+  username     String      @unique
+  passwordHash String      // Argon2id / Bcrypt
+  hwidHash     String?     // HWID vinculado ao usuário
+  pcName       String?
+  lastIp       String?
+  status       String      @default("ACTIVE") // ACTIVE, BANNED, DISABLED
+  banReason    String?
+  bannedUntil  DateTime?
+  lastLoginAt  DateTime?
+  
+  appId        String
+  app          Application @relation(fields: [appId], references: [id], onDelete: Cascade)
+  
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  // Relações Inversas
+  licenses     License[]
+  sessions     Session[]
+}
+
+// ============================================================
+// LICENSES (Chaves de licença)
+// ============================================================
+model License {
+  id          String      @id @default(cuid())
+  key         String      @unique // SPC-XXXX-XXXX
+  appId       String
+  app         Application @relation(fields: [appId], references: [id], onDelete: Cascade)
+  
+  userId      String?     // Null se ainda não ativada
+  user        User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  status      String      @default("UNUSED") // UNUSED, ACTIVE, EXPIRED, REVOKED
+  hwidHash    String?     // HWID vinculado à licença
+  durationDays Int?       // Duração em dias (null = lifetime)
+  
+  activatedAt  DateTime?
+  expiresAt    DateTime?
+  lastValidationAt DateTime?
+  lastIp       String?
+  
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([key])
+  @@index([userId])
+  @@index([appId])
+}
+
+// ============================================================
+// SESSIONS (Sessões ativas dos usuários)
+// ============================================================
 model Session {
-  id        String   @id @default(cuid())
-  token     String   @unique // High entropy random string
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  expiresAt DateTime
-  createdAt DateTime @default(now())
+  id          String      @id @default(cuid())
+  tokenHash   String      @unique // Hash do token sst_xxx
+  userId      String
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appId       String
+  app         Application @relation(fields: [appId], references: [id], onDelete: Cascade)
+  
+  hwidHash    String?
+  pcName      String?
+  ip          String?
+  userAgent   String?
+  
+  expiresAt   DateTime
+  lastActivity DateTime  @default(now())
+  createdAt   DateTime   @default(now())
+
+  @@index([tokenHash])
+  @@index([userId])
 }
 
+// ============================================================
+// VARIABLES (Variáveis globais da aplicação)
+// ============================================================
 model Variable {
-  id        String   @id @default(cuid())
+  id        String      @id @default(cuid())
   key       String
   value     String
   appId     String
-  app       Application @relation(fields: [appId], references: [id])
+  app       Application @relation(fields: [appId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
   @@unique([appId, key])
 }
 
+// ============================================================
+// BLACKLIST (Bloqueios de IP, HWID, User)
+// ============================================================
+model BlacklistRule {
+  id        String      @id @default(cuid())
+  type      String      // IP, HWID, USER, LICENSE
+  value     String
+  reason    String?
+  appId     String?     // Null = Global
+  app       Application? @relation(fields: [appId], references: [id], onDelete: Cascade)
+  createdAt DateTime    @default(now())
+
+  @@index([type, value])
+}
+
+// ============================================================
+// AUDIT LOGS (Logs de segurança e ações admin)
+// ============================================================
 model AuditLog {
+  id         String   @id @default(cuid())
+  action     String   // LOGIN_SUCCESS, LOGIN_FAILED, LICENSE_REVOKED, etc.
+  entityType String?  // User, License, Application
+  entityId   String?
+  actorType  String?  // Admin, Application, System
+  actorId    String?
+  ip         String?
+  hwid       String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([action])
+  @@index([createdAt])
+}
+
+// ============================================================
+// RATE LIMITING (Controle de brute-force no banco)
+// ============================================================
+model RateLimitEntry {
   id        String   @id @default(cuid())
-  action    String   // e.g., "LOGIN_FAILED", "LICENSE_REVOKED"
-  ip        String?
-  hwid      String?
-  metadata  Json?
+  key       String   @unique // ex: "login:192.168.1.1"
+  count     Int      @default(1)
+  resetAt   DateTime
   createdAt DateTime @default(now())
+
+  @@index([resetAt])
 }
