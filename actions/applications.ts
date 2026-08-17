@@ -24,6 +24,30 @@ async function admin() {
 
 const ip = () => headers().get('x-forwarded-for') || 'unknown';
 
+export async function regenerateAppSecret(id: string) {
+  const session = await getAdminSession();
+  if (!session) throw new Error('Unauthorized');
+
+  // Gera um novo secret seguro
+  const newSecret = `sk_live_${randomBytes(32).toString('hex')}`;
+
+  await db.application.update({
+    where: { id },
+    data: { appSecret: newSecret },
+  });
+
+  await logAudit({
+    action: 'APP_SECRET_REGENERATED',
+    entityType: 'Application',
+    entityId: id,
+    actorId: session.adminId,
+    actorType: 'Admin',
+  });
+
+  revalidatePath(`/applications/${id}`);
+  return { success: true, newSecret };
+}
+
 export async function createApplication(formData: FormData) {
   const session = await admin();
 

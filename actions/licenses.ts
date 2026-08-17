@@ -41,6 +41,26 @@ function randomKey(): string {
   return `SPC-${seg()}-${seg()}-${seg()}-${seg()}`;
 }
 
+export async function resetLicenseHwid(licenseId: string) {
+  const session = await getAdminSession();
+  if (!session) throw new Error('Unauthorized');
+
+  await db.license.update({
+    where: { id: licenseId },
+    data: { hwidHash: null },
+  });
+
+  await logAudit({
+    action: 'LICENSE_HWID_RESET',
+    entityType: 'License',
+    entityId: licenseId,
+    actorId: session.adminId,
+    actorType: 'Admin',
+  });
+
+  revalidatePath(`/licenses/${licenseId}`);
+}
+
 export async function generateLicenses(fd: FormData) {
   await admin();
 
