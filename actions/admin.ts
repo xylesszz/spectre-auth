@@ -17,14 +17,11 @@ export async function login(formData: FormData) {
   const key = String(formData.get('key') ?? '').trim();
   const ip = headers().get('x-forwarded-for')?.split(',').at(-1)?.trim() ?? 'unknown';
 
-  const admin = await db.admin.findFirst();
-  if (!admin) {
-    throw new Error('Admin not found. Run bootstrap first.');
-  }
-
+  // 1. Verificar a chave primeiro (não precisa de admin no banco ainda)
   const expectedKey = process.env.ADMIN_KEY;
   if (!expectedKey) {
-    throw new Error('ADMIN_KEY not configured in environment');
+    console.error('ADMIN_KEY not configured');
+    redirect('/login?error=1');
   }
 
   const keyBuffer = Buffer.from(key);
@@ -43,6 +40,20 @@ export async function login(formData: FormData) {
     redirect('/login?error=1');
   }
 
+  // 2. Se a chave é válida, garantir que existe um admin no banco
+  let admin = await db.admin.findFirst();
+  if (!admin) {
+    // Cria admin automaticamente (apenas uma vez)
+    admin = await db.admin.create({
+      data: {
+        email: 'admin@spectre.local',
+        passwordHash: 'unused',
+      },
+    });
+    console.log('✅ Admin created automatically.');
+  }
+
+  // 3. Criar sessão
   const rawToken = randomBytes(48).toString('hex');
   const tokenHash = hashToken(rawToken);
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 86400000);
