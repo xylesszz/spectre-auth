@@ -1,46 +1,16 @@
-import { db } from './db';
 import { cookies } from 'next/headers';
-import { cache } from 'react';
 
-export const getAdminSession = cache(async () => {
-  const cookieStore = cookies();
-  const sessionId = cookieStore.get('spectre_admin_session')?.value;
-  if (!sessionId) return null;
-
-  const session = await db.adminSession.findUnique({
-    where: { id: sessionId },
-    include: { admin: true },
-  });
-
-  if (!session || session.expiresAt < new Date()) {
-    if (session) await db.adminSession.delete({ where: { id: session.id } });
-    return null;
-  }
-
-  await db.adminSession.update({
-    where: { id: session.id },
-    data: { lastActivity: new Date() }
-  });
-
-  return session;
-});
-
-export async function createAdminSession(adminId: string, ip: string, userAgent: string) {
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + 7);
-
-  return db.adminSession.create({
-    data: {
-      adminId,
-      expiresAt,
-      ip,
-      userAgent,
-    },
-  });
+export interface AdminSession {
+  adminId: string;
+  email: string;
 }
 
-export async function deleteAdminSession(sessionId: string) {
+export async function getAdminSession(): Promise<AdminSession | null> {
   try {
-    await db.adminSession.delete({ where: { id: sessionId } });
-  } catch {}
+    const c = cookies().get('spectre_admin_key');
+    if (!c || c.value !== 'ok') return null;
+    return { adminId: 'key-admin', email: 'admin' };
+  } catch {
+    return null;
+  }
 }

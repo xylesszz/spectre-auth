@@ -1,48 +1,43 @@
 import { login } from '@/actions/admin';
-import { redirect } from 'next/navigation';
-import { getAdminSession } from '@/lib/session';
 
-export default async function LoginPage() {
-  const session = await getAdminSession();
-  if (session) redirect('/');
+export default function LoginPage({ searchParams }: { searchParams: { error?: string } }) {
+  const invalid = searchParams?.error === '1';
 
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-[#0a0a0a] border border-gray-800 rounded-lg p-8 shadow-2xl shadow-red-900/10">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-white tracking-tight">
+    <div className="min-h-screen flex items-center justify-center bg-black px-4">
+      <form
+        action={login}
+        className="w-full max-w-sm space-y-4 p-8 bg-[#0a0a0a] border border-red-600/30 rounded-lg shadow-2xl shadow-red-900/20"
+      >
+        <div className="text-center mb-6">
+          <h1 className="text-2xl font-bold text-white">
             SPECTRE <span className="text-red-600">AUTH</span>
           </h1>
-          <p className="text-gray-500 mt-2 text-sm">Private Infrastructure Access</p>
+          <p className="text-xs text-gray-500 mt-2">Enter your access key</p>
         </div>
-        
-        <form action={login} className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-400 mb-2">Email</label>
-            <input
-              type="email"
-              name="email"
-              required
-              className="w-full px-4 py-2.5 bg-black border border-gray-800 rounded-md text-white focus:outline-none focus:border-red-600 transition-colors"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-400 mb-2">Password</label>
-            <input
-              type="password"
-              name="password"
-              required
-              className="w-full px-4 py-2.5 bg-black border border-gray-800 rounded-md text-white focus:outline-none focus:border-red-600 transition-colors"
-            />
-          </div>
-          <button
-            type="submit"
-            className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-medium rounded-md transition-colors shadow-lg shadow-red-900/20"
-          >
-            Authenticate
-          </button>
-        </form>
-      </div>
+
+        {invalid && (
+          <p className="text-red-500 text-xs text-center bg-red-950/40 border border-red-800/50 rounded py-2">
+            ✕ Invalid key
+          </p>
+        )}
+
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">Key</label>
+          <input
+            name="key"
+            type="password"
+            required
+            autoFocus
+            placeholder="••••••••"
+            className="w-full px-3 py-2 bg-black border border-gray-800 rounded text-white text-sm focus:outline-none focus:border-red-600"
+          />
+        </div>
+
+        <button className="w-full py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded transition-colors">
+          Access
+        </button>
+      </form>
     </div>
   );
 }
