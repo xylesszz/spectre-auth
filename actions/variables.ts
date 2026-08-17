@@ -1,8 +1,9 @@
 'use server';
+
 import { db } from '@/lib/db';
-import { getAdminSession } from '@/lib/session';
 import { revalidatePath } from 'next/cache';
 import { logAudit } from '@/lib/audit';
+import { getAdminSession } from '@/lib/session';
 import { headers } from 'next/headers';
 
 async function admin() {
@@ -11,21 +12,55 @@ async function admin() {
   return s;
 }
 
-export async function setAppVariable(fd: FormData) {
+export async function setVariable(fd: FormData) {
   const s = await admin();
   const appId = fd.get('appId') as string;
-  const name = (fd.get('name') as string)?.trim();
-  const value = (fd.get('value') as string) ?? '';
-  if (!name) throw new Error('Variable name required');
+  const key = fd.get('key') as string; // Mudado de 'name' para 'key'
+  const value = fd.get('value') as string;
+
+  if (!appId || !key) throw new Error('App ID and Key required');
   if (!(await db.application.findUnique({ where: { id: appId } }))) throw new Error('Application not found');
-  await db.appVariable.upsert({ where: { appId_name: { appId, name } }, update: { value }, create: { appId, name, value } });
-  await logAudit({ action: 'VARIABLE_SET', entityType: 'AppVariable', actorId: s.adminId, actorType: 'Admin', ip: headers().get('x-forwarded-for') || 'unknown', metadata: { name } as any });
+
+  // Usando db.variable (minúsculo) e os campos corretos (appId, key)
+  // O @@unique([appId, key]) cria um índice implícito, mas para upsert precisamos referenciar os campos
+  await db.variable.upsert({
+    where: { 
+      appId_key: { appId, key } // Prisma gera esse nome baseado no @@unique([appId, key])
+    },
+    update: { value },
+    create: { appId, key, value }
+  });
+
+  await logAudit({ 
+    action: 'VARIABLE_SET', 
+    entityType: 'Variable', 
+    entityId: appId,
+    actorId: s.adminId, 
+    actorType: 'Admin', 
+    ip: headers().get('x-forwarded-for') || 'unknown', 
+    metadata: { key } as any 
+  });
+  
   revalidatePath('/variables');
 }
 
-export async function deleteAppVariable(varId: string) {
+export async function deleteVariable(id: string) {
   const s = await admin();
-  await db.appVariable.delete({ where: { id: varId } });
-  await logAudit({ action: 'VARIABLE_DELETED', entityType: 'AppVariable', entityId: varId, actorId: s.adminId, actorType: 'Admin', ip: headers().get('x-forwarded-for') || 'unknown' });
+  
+  const variable = await db.variable.findUnique({ where: { id } });
+  if (!variable) throw new Error('Variable not found');
+
+  await db.variable.delete({ where: { id } });
+
+  await logAudit({ 
+    action: 'VARIABLE_DELETED', 
+    entityType: 'Variable', 
+    entityId: id,
+    actorId: s.adminId, 
+    actorType: 'Admin', 
+    ip: headers().get('x-forwarded-for') || 'unknown',
+    metadata: { key: variable.key } as any
+  });
+
   revalidatePath('/variables');
 }
