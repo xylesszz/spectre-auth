@@ -152,7 +152,9 @@ export default async function LicensesPage({ searchParams }: { searchParams: Rec
                 <span className="text-purple-400">Lifetime</span>
               )}
             </Td>
-            <Td className="text-xs">{l.activationCount}/{l.maxActivations}</Td>
+            <Td className="text-xs">
+  {l.expiresAt ? new Date(l.expiresAt).toLocaleDateString('pt-BR') : 'Lifetime'}
+</Td>
             <Td>
               <Link href={`/licenses/${l.id}`} className={btn.blue}>Manage</Link>
             </Td>
