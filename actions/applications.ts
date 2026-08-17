@@ -46,8 +46,8 @@ export async function createApplication(formData: FormData) {
           name,
           slug,
           appId: publicId,
+          appSecret: '', 
           status: 'ACTIVE',
-          appSecret: '',
           hwidLock: true,
           minHwidLength: 16,
           maintenanceMode: false,
@@ -82,7 +82,6 @@ export async function createApplication(formData: FormData) {
     });
 
     revalidatePath('/applications');
-    // Retorna o secret para exibição única (não via URL)
     return { success: true, appId: app.id, secret };
   } catch (error: any) {
     if (error.code === 'P2002') {
