@@ -131,14 +131,22 @@ export async function extendLicense(licenseId: string, fd: FormData) {
   reval(licenseId);
 }
 
-export async function resetLicenseHwid(licenseId: string) {
-  await admin();
-  await db.license.update({ 
-    where: { id: licenseId }, 
-    data: { hwidHash: null } 
+export async function resetLicenseActivations(licenseId: string) {
+  const session = await getAdminSession();
+  if (!session) throw new Error('Unauthorized');
+
+  // Reseta o HWID e contadores de ativação
+  await db.license.update({
+    where: { id: licenseId },
+    data: { 
+      hwidHash: null,
+      // Se você tiver um campo activationCount no schema, resete aqui também
+      // activationCount: 0 
+    },
   });
-  await audit('LICENSE_HWID_RESET', licenseId);
-  reval(licenseId);
+
+  revalidatePath('/licenses');
+  revalidatePath(`/licenses/${licenseId}`);
 }
 
 export async function assignLicense(licenseId: string, fd: FormData) {

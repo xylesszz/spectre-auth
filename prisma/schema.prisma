@@ -139,11 +139,18 @@ model Variable {
 
 model BlacklistRule {
   id        String       @id @default(cuid())
-  type      String
+  type      String       // IP, HWID, USER, LICENSE
   value     String
   reason    String?
-  appId     String?
+  appId     String?      // Null = Global
   app       Application? @relation(fields: [appId], references: [id], onDelete: Cascade)
+  
+  // Campos adicionais necessários para a lógica de segurança
+  kind      String       @default("BLOCK") // BLOCK ou WHITELIST (se você usar essa lógica)
+  createdBy String?      // ID do admin que criou
+  expiresAt DateTime?    // Data de expiração da regra
+  active    Boolean      @default(true)
+  
   createdAt DateTime     @default(now())
 
   @@index([type, value])
