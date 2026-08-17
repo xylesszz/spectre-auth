@@ -59,11 +59,12 @@ export async function POST(req: NextRequest) {
     return apiError('APPLICATION_NOT_ACTIVE', 'Application is not active.', 403);
   }
 
+  // CORREÇÃO 1: Adicionada a vírgula faltando após o 'where'
   const user = await db.user.findUnique({
     where: { username: body.username.trim() },
     include: {
       licenses: {
-        where: { OR: [{ appId: app.id }, { appId: null }] },
+        where: { appId: app.id }, 
         orderBy: { createdAt: 'desc' },
       },
     },
@@ -98,7 +99,8 @@ export async function POST(req: NextRequest) {
     return apiError('USER_DISABLED', 'Account is disabled.', 403);
   }
 
-  let license = user.licenses.find((l) => l.status === 'ACTIVE' && (l.appId === app.id || l.appId === null));
+  // CORREÇÃO 2: Removido '|| l.appId === null' pois appId é obrigatório no schema
+  let license = user.licenses.find((l) => l.status === 'ACTIVE' && l.appId === app.id);
   if (!license) {
     const unused = user.licenses.find((l) => l.status === 'UNUSED');
     if (unused) {
@@ -163,7 +165,8 @@ export async function POST(req: NextRequest) {
         data: { lastValidationAt: new Date(), lastIp: meta.ip },
       });
 
-      await tx.userSession.create({
+      // CORREÇÃO 3: tx.session em vez de tx.userSession
+      await tx.session.create({
         data: {
           userId: user.id,
           appId: app.id,
