@@ -25,17 +25,15 @@ model Application {
   version                String?
   description            String?
   
-  // --- ADICIONE ESTAS LINHAS ABAIXO ---
+  // Configurações de Segurança
   hwidLock               Boolean       @default(true)
   forceHwid              Boolean       @default(false)
   vpnBlock               Boolean       @default(false)
-  maintenanceMode        Boolean       @default(false)
+  maintenanceMode        Boolean       @default(false) // Corrigido: removida a duplicata abaixo
   minHwidLength          Int           @default(16)
   sessionExpirationMinutes Int         @default(1440)
   minUsernameLength      Int           @default(3)
   hwidResetCooldownMinutes Int         @default(0)
-  maintenanceMode        Boolean       @default(false)
-  // ------------------------------------
 
   createdAt              DateTime      @default(now())
   updatedAt              DateTime      @updatedAt
@@ -149,7 +147,7 @@ model BlacklistRule {
   app       Application? @relation(fields: [appId], references: [id], onDelete: Cascade)
   
   // Campos adicionais necessários para a lógica de segurança
-  kind      String       @default("BLOCK") // BLOCK ou WHITELIST (se você usar essa lógica)
+  kind      String       @default("BLOCK") // BLOCK ou WHITELIST
   createdBy String?      // ID do admin que criou
   expiresAt DateTime?    // Data de expiração da regra
   active    Boolean      @default(true)
