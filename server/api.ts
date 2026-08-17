@@ -70,13 +70,13 @@ export async function createSession(
 export async function resolveSession(req: NextRequest, app: { id: string }) {
   const raw = req.headers.get('x-session-token');
   if (!raw) return null;
-  const session = await db.userSession.findUnique({
+  const session = await db.session.findUnique({
     where: { tokenHash: hashToken(raw) },
     include: { user: { include: { licenses: { where: { appId: app.id, status: 'ACTIVE' }, take: 1 } } } },
   });
   if (!session || session.appId !== app.id || session.expiresAt < new Date()) return null;
   if (session.user.status !== 'ACTIVE') return null;
-  await db.userSession.update({ where: { id: session.id }, data: { lastActivity: new Date() } });
+  await db.session.update({ where: { id: session.id }, data: { lastActivity: new Date() } });
   return session;
 }
 
