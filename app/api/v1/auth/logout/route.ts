@@ -11,10 +11,14 @@ export async function POST(req: NextRequest) {
   const raw = req.headers.get('x-session-token');
   if (!raw) return apiError('NO_SESSION', 'Session token missing.', 400);
 
-  const session = await db.userSession.findUnique({ where: { tokenHash: hashToken(raw) } });
+  // CORREÇÃO: db.session em vez de db.userSession
+  const session = await db.session.findUnique({ where: { tokenHash: hashToken(raw) } });
+  
   if (session && session.appId === app.id) {
-    await db.userSession.delete({ where: { id: session.id } });
+    // CORREÇÃO: db.session em vez de db.userSession
+    await db.session.delete({ where: { id: session.id } });
     await logApi('API_LOGOUT', app, meta);
   }
+  
   return NextResponse.json({ success: true, message: 'Logged out' });
 }
