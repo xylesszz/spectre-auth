@@ -13,26 +13,40 @@ export default function LoginPage({ searchParams }: { searchParams: { error?: st
           <h1 className="text-2xl font-bold text-white">
             SPECTRE <span className="text-red-600">AUTH</span>
           </h1>
-          <p className="text-xs text-gray-500 mt-2">Enter your access key</p>
+          <p className="text-xs text-gray-500 mt-2">Enter your credentials</p>
         </div>
 
         {invalid && (
           <p className="text-red-500 text-xs text-center bg-red-950/40 border border-red-800/50 rounded py-2">
-            ✕ Invalid key
+            ✕ Invalid credentials
           </p>
         )}
 
         <div>
-          <label className="block text-xs text-gray-400 mb-1">Key</label>
+          <label className="block text-xs text-gray-400 mb-1">Email</label>
           <input
-            name="key"
-            type="password"
+            name="email"
+            type="email"
             required
             autoFocus
+            placeholder="admin@example.com"
+            className="w-full px-3 py-2 bg-black border border-gray-800 rounded text-white text-sm focus:outline-none focus:border-red-600"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">Password</label>
+          <input
+            name="password"
+            type="password"
+            required
             placeholder="••••••••"
             className="w-full px-3 py-2 bg-black border border-gray-800 rounded text-white text-sm focus:outline-none focus:border-red-600"
           />
         </div>
+
+        {/* CSRF token (hidden) */}
+        <input type="hidden" name="_csrf" value="csrf-token" />
 
         <button className="w-full py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded transition-colors">
           Access

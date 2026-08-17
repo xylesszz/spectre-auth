@@ -2,38 +2,60 @@
 
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { db } from '@/lib/db';
+import bcrypt from 'bcryptjs';
+import { randomBytes, createHash } from 'crypto';
+import { headers } from 'next/headers';
 
-const COOKIE_NAME = 'spectre_admin_key';
+const COOKIE_NAME = 'spectre_admin_session';
+const SESSION_DAYS = 7;
+
+function hashToken(token: string): string {
+  return createHash('sha256').update(`admin_session:${token}`).digest('hex');
+}
 
 export async function login(formData: FormData) {
-  const key = String(formData.get('key') ?? '').trim();
-  
-  // 🔒 SEGURANÇA: Lê APENAS da variável de ambiente. 
-  // Se ADMIN_KEY não estiver definida no .env ou na Vercel, o acesso é negado.
-  const expectedKey = process.env.ADMIN_KEY;
+  const email = String(formData.get('email') ?? '').trim().toLowerCase();
+  const password = String(formData.get('password') ?? '');
+  const ip = headers().get('x-forwarded-for')?.split(',').at(-1)?.trim() ?? 'unknown';
 
-  if (!expectedKey) {
-    console.error("CRITICAL: ADMIN_KEY environment variable is not set.");
-    // Em produção, nunca mostre o erro real ao usuário, apenas redirecione
-    redirect('/login?error=1'); 
-  }
+  if (!email || !password) redirect('/login?error=1');
 
-  if (!key || key !== expectedKey) {
+  const admin = await db.admin.findUnique({ where: { email } });
+
+  const dummyHash = '$2a$12$invalidhashpaddingtomakeconstanttime000000000000000000000';
+  const ok = await bcrypt.compare(password, admin?.passwordHash ?? dummyHash);
+
+  if (!admin || !ok) {
+    // log falha
     redirect('/login?error=1');
   }
 
-  cookies().set(COOKIE_NAME, 'authenticated', {
+  const rawToken = randomBytes(48).toString('hex');
+  const tokenHash = hashToken(rawToken);
+  const expiresAt = new Date(Date.now() + SESSION_DAYS * 86400000);
+
+  await db.adminSession.create({
+    data: { tokenHash, adminId: admin.id, expiresAt, ip },
+  });
+
+  cookies().set(COOKIE_NAME, rawToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
     path: '/',
-    maxAge: 60 * 60 * 24 * 7, // 7 dias
+    maxAge: SESSION_DAYS * 86400,
   });
 
   redirect('/');
 }
 
 export async function logout() {
+  const c = cookies().get(COOKIE_NAME);
+  if (c?.value) {
+    const tokenHash = hashToken(c.value);
+    await db.adminSession.deleteMany({ where: { tokenHash } }).catch(() => {});
+  }
   cookies().delete(COOKIE_NAME);
   redirect('/login');
 }

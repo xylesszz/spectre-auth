@@ -31,7 +31,10 @@ export async function findBlockingRule(
   const live = rules.filter(notExpired);
 
   const whitelisted = (type: string, value?: string) =>
-    !!value && live.some((r) => r.kind === 'WHITELIST' && r.type === type && r.value === value);
+    !!value && live.some(
+      (r) => r.kind === 'WHITELIST' && r.type === type &&
+      r.value.toLowerCase() === value.toLowerCase() // CORRIGIDO: case-insensitive
+    );
 
   const wlIp = whitelisted('IP', targets.ip);
   const wlHwid = whitelisted('HWID', targets.hwidHash);

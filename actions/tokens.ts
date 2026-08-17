@@ -5,11 +5,9 @@ import { revalidatePath } from 'next/cache';
 import { logAudit } from '@/lib/audit';
 import { getAdminSession } from '@/lib/session';
 import { headers } from 'next/headers';
-import { randomBytes, createHash } from 'crypto';
-
-function hashToken(token: string) {
-  return createHash('sha256').update(token).digest('hex');
-}
+import { randomBytes } from 'crypto';
+import bcrypt from 'bcryptjs';
+import { validateCsrf } from '@/lib/csrf';
 
 async function admin() {
   const s = await getAdminSession();
@@ -18,9 +16,10 @@ async function admin() {
 }
 
 export async function createToken(fd: FormData) {
+  if (!validateCsrf()) throw new Error('CSRF validation failed');
   const s = await admin();
   const appId = fd.get('appId') as string;
-  const name = fd.get('name') as string; // Usado apenas para log/auditoria
+  const name = fd.get('name') as string;
 
   if (!appId) throw new Error('Application is required');
 
@@ -29,38 +28,42 @@ export async function createToken(fd: FormData) {
 
   const publicId = `pub_${randomBytes(8).toString('hex')}`;
   const rawSecret = `sk_live_${randomBytes(24).toString('hex')}`;
-  
+  const secretHash = await bcrypt.hash(rawSecret, 10);
+
   await db.applicationCredential.create({
     data: {
       publicId,
-      secretHash: hashToken(rawSecret), // Nunca salvamos o secret em texto puro
+      secretHash,
       appId,
       status: 'ACTIVE',
-    }
+    },
   });
 
-  await logAudit({ 
-    action: 'TOKEN_CREATED', 
-    entityType: 'ApplicationCredential', 
-    actorId: s.adminId, 
-    actorType: 'Admin', 
-    ip: headers().get('x-forwarded-for') || 'unknown', 
-    metadata: { name, appId, publicId } 
+  await logAudit({
+    action: 'TOKEN_CREATED',
+    entityType: 'ApplicationCredential',
+    actorId: s.adminId,
+    actorType: 'Admin',
+    ip: headers().get('x-forwarded-for') || 'unknown',
+    metadata: { name, appId, publicId },
   });
-  
+
   revalidatePath('/tokens');
+  return { success: true, publicId, secret: rawSecret };
 }
 
 export async function revokeToken(id: string) {
+  if (!validateCsrf()) throw new Error('CSRF validation failed');
   await admin();
   await db.applicationCredential.update({
     where: { id },
-    data: { status: 'REVOKED' }
+    data: { status: 'REVOKED' },
   });
   revalidatePath('/tokens');
 }
 
 export async function deleteToken(id: string) {
+  if (!validateCsrf()) throw new Error('CSRF validation failed');
   await admin();
   await db.applicationCredential.delete({ where: { id } });
   revalidatePath('/tokens');

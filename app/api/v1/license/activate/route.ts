@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { randomBytes } from 'crypto';
 import { db } from '@/lib/db';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
@@ -96,7 +97,7 @@ export async function POST(req: NextRequest) {
               userId = existing.id;
             } else {
               // Schema exige passwordHash, geramos um dummy para usuário criado via ativação
-              const dummyHash = await bcrypt.hash(Math.random().toString(36), 4);
+              const dummyHash = await bcrypt.hash(randomBytes(32).toString('hex'), 12);
               const user = await tx.user.create({
                 data: { 
                   username: uname, 

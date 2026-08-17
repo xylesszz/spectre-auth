@@ -9,14 +9,26 @@ export function apiError(code: string, message: string, status = 400) {
 }
 
 export function clientMeta(req: NextRequest) {
+  // Em produção (Vercel), confiar apenas no último IP do x-forwarded-for
+  const forwarded = req.headers.get('x-forwarded-for');
+  const ip = process.env.NODE_ENV === 'production'
+    ? forwarded?.split(',').at(-1)?.trim() // último = inserido pelo proxy
+    : forwarded?.split(',')[0]?.trim();
+
+  // Normalização IPv6 (ex: ::ffff:1.2.3.4 -> 1.2.3.4)
+  let normalizedIp = ip || req.headers.get('x-real-ip') || 'unknown';
+  if (normalizedIp.startsWith('::ffff:')) {
+    normalizedIp = normalizedIp.substring(7);
+  }
+
   return {
-    ip: req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown',
+    ip: normalizedIp,
     userAgent: req.headers.get('user-agent') || 'unknown',
   };
 }
 
 export async function authenticateApp(req: NextRequest) {
-  const publicId = req.headers.get('x-app-id');
+  const publicId = req.headers.get('x-app-id') || req.headers.get('x-app-public-id');
   const secret = req.headers.get('x-app-secret');
   if (!publicId || !secret) return null;
 
@@ -46,7 +58,6 @@ export async function securityBlock(
   if (app.maintenanceMode) return 'MAINTENANCE_MODE';
   const rule = await findBlockingRule(app.id, targets);
   if (rule) return `BLACKLISTED_${rule.type}`;
-  void meta;
   return null;
 }
 

@@ -37,8 +37,8 @@ export async function POST(req: NextRequest) {
 
   if (!license) return apiError('INVALID_LICENSE', 'License not found.', 404);
 
-  // Licença pode ser "geral" (appId null) ou pertencer a esta aplicação
-  if (license.appId && license.appId !== app.id) {
+  // CORREÇÃO: exigir appId igual ao da aplicação autenticada
+  if (license.appId !== app.id) {
     return apiError('APP_MISMATCH', 'License does not belong to this application.', 403);
   }
 

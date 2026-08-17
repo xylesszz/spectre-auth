@@ -149,7 +149,8 @@ export function ClientForm({ submitLabel, fn, fields, cols = 'grid-cols-2' }: { 
   const [result, setResult] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const router = useRouter();
-
+  <input type="hidden" name="_csrf" value="csrf-token" />
+  
   async function submit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);

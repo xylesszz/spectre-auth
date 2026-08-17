@@ -13,6 +13,7 @@ model Admin {
   passwordHash String
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  sessions     AdminSession[]
 }
 
 model Application {
@@ -20,7 +21,7 @@ model Application {
   name                   String
   slug                   String        @unique
   appId                  String        @unique @map("app_id")
-  appSecret              String        @map("app_secret")
+  // appSecret REMOVIDO – agora usamos ApplicationCredential
   status                 AppStatus     @default(ACTIVE)
   version                String?
   description            String?
@@ -29,7 +30,7 @@ model Application {
   hwidLock               Boolean       @default(true)
   forceHwid              Boolean       @default(false)
   vpnBlock               Boolean       @default(false)
-  maintenanceMode        Boolean       @default(false) // Corrigido: removida a duplicata abaixo
+  maintenanceMode        Boolean       @default(false)
   minHwidLength          Int           @default(16)
   sessionExpirationMinutes Int         @default(1440)
   minUsernameLength      Int           @default(3)
@@ -146,15 +147,16 @@ model BlacklistRule {
   appId     String?      // Null = Global
   app       Application? @relation(fields: [appId], references: [id], onDelete: Cascade)
   
-  // Campos adicionais necessários para a lógica de segurança
-  kind      String       @default("BLOCK") // BLOCK ou WHITELIST
-  createdBy String?      // ID do admin que criou
-  expiresAt DateTime?    // Data de expiração da regra
+  kind      String       @default("BLACKLIST") // CORRIGIDO: "BLACKLIST" em vez de "BLOCK"
+  createdBy String?
+  expiresAt DateTime?
   active    Boolean      @default(true)
   
   createdAt DateTime     @default(now())
 
   @@index([type, value])
+  @@index([active, kind])   // NOVO
+  @@index([appId, active])  // NOVO
 }
 
 model AuditLog {
@@ -181,4 +183,16 @@ model RateLimitEntry {
   createdAt DateTime @default(now())
 
   @@index([resetAt])
+}
+
+model AdminSession {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  adminId   String
+  admin     Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([tokenHash])
 }

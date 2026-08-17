@@ -3,6 +3,9 @@
 import { db } from '@/lib/db';
 import { getAdminSession } from '@/lib/session';
 import { revalidatePath } from 'next/cache';
+import { validateCsrf } from '@/lib/csrf';
+import { logAudit } from '@/lib/audit';
+import { headers } from 'next/headers';
 
 async function admin() {
   const s = await getAdminSession();
@@ -11,11 +14,11 @@ async function admin() {
 }
 
 export async function createRule(fd: FormData) {
+  if (!validateCsrf()) throw new Error('CSRF validation failed');
   const s = await admin();
-  
+
   const type = fd.get('type') as string;
-  // Alinhado com o page.tsx (BLACKLIST ou WHITELIST)
-  const kind = (fd.get('kind') as string) || 'BLACKLIST'; 
+  const kind = (fd.get('kind') as string) || 'BLACKLIST';
   const value = fd.get('value') as string;
   const appId = (fd.get('appId') as string) || null;
   const reason = (fd.get('reason') as string) || null;
@@ -32,20 +35,29 @@ export async function createRule(fd: FormData) {
       reason,
       createdBy: s.adminId,
       expiresAt: Number.isFinite(hours) && hours > 0 ? new Date(Date.now() + hours * 3600000) : null,
-      active: true, // Garante que começa ativo
+      active: true,
     },
+  });
+
+  await logAudit({
+    action: 'RULE_CREATED',
+    entityType: 'BlacklistRule',
+    actorId: s.adminId,
+    actorType: 'Admin',
+    ip: headers().get('x-forwarded-for') || 'unknown',
+    metadata: { type, kind, value, appId },
   });
 
   revalidatePath('/security');
 }
 
 export async function toggleRule(id: string) {
+  if (!validateCsrf()) throw new Error('CSRF validation failed');
   await admin();
-  
+
   const rule = await db.blacklistRule.findUnique({ where: { id } });
   if (!rule) throw new Error('Rule not found');
 
-  // Agora alterna o campo 'active' em vez de deletar
   await db.blacklistRule.update({
     where: { id },
     data: { active: !rule.active },
@@ -55,8 +67,9 @@ export async function toggleRule(id: string) {
 }
 
 export async function deleteRule(id: string) {
+  if (!validateCsrf()) throw new Error('CSRF validation failed');
   await admin();
-  
+
   await db.blacklistRule.delete({
     where: { id },
   });
