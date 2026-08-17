@@ -29,10 +29,11 @@ export async function authenticateApp(req: NextRequest) {
   const ok = await bcrypt.compare(secret, credential.secretHash);
   if (!ok) return null;
 
-  await db.$transaction([
-    db.applicationCredential.update({ where: { id: credential.id }, data: { lastUsedAt: new Date() } }),
-    db.application.update({ where: { id: credential.app.id }, data: { lastApiActivity: new Date() } }),
-  ]);
+  await db.applicationCredential.update({
+    where: { id: credential.id },
+    data: { lastUsedAt: new Date() },
+  });
+
   return credential.app;
 }
 
@@ -51,9 +52,18 @@ export async function securityBlock(
 
 export async function createSession(
   tx: any,
-  data: { userId: string; appId: string; rawToken: string; hwidHash?: string | null; pcName?: string | null; ip: string; userAgent: string; expirationMinutes: number }
+  data: {
+    userId: string;
+    appId: string;
+    rawToken: string;
+    hwidHash?: string | null;
+    pcName?: string | null;
+    ip: string;
+    userAgent: string;
+    expirationMinutes: number;
+  }
 ) {
-  return tx.userSession.create({
+  return tx.session.create({
     data: {
       userId: data.userId,
       appId: data.appId,
@@ -70,17 +80,38 @@ export async function createSession(
 export async function resolveSession(req: NextRequest, app: { id: string }) {
   const raw = req.headers.get('x-session-token');
   if (!raw) return null;
+
   const session = await db.session.findUnique({
     where: { tokenHash: hashToken(raw) },
-    include: { user: { include: { licenses: { where: { appId: app.id, status: 'ACTIVE' }, take: 1 } } } },
+    include: {
+      user: {
+        include: {
+          licenses: {
+            where: { appId: app.id, status: 'ACTIVE' },
+            take: 1,
+          },
+        },
+      },
+    },
   });
+
   if (!session || session.appId !== app.id || session.expiresAt < new Date()) return null;
   if (session.user.status !== 'ACTIVE') return null;
-  await db.session.update({ where: { id: session.id }, data: { lastActivity: new Date() } });
+
+  await db.session.update({
+    where: { id: session.id },
+    data: { lastActivity: new Date() },
+  });
+
   return session;
 }
 
-export async function logApi(action: string, app: { id: string } | null, meta: { ip: string }, extra?: Record<string, unknown>) {
+export async function logApi(
+  action: string,
+  app: { id: string } | null,
+  meta: { ip: string },
+  extra?: Record<string, unknown>
+) {
   await logAudit({
     action,
     entityType: 'API',
