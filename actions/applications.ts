@@ -46,8 +46,8 @@ export async function createApplication(formData: FormData) {
           name,
           slug,
           appId: publicId,
-          appSecret: '', // campo obrigatório no schema, mas não usado
           status: 'ACTIVE',
+          appSecret: '',
           hwidLock: true,
           minHwidLength: 16,
           maintenanceMode: false,
