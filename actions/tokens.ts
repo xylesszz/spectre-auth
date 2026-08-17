@@ -12,13 +12,6 @@ function generateRawToken(prefix: string) {
   return `${prefix}_${randomBytes(32).toString('hex')}`;
 }
 
-// Função auxiliar para hash (simplificada para exemplo, use bcrypt em prod)
-function hashToken(token: string) {
-  // Em produção use bcrypt ou similar. Aqui usamos sha256 simples apenas para não quebrar.
-  const crypto = require('crypto');
-  return crypto.createHash('sha256').update(token).digest('hex');
-}
-
 export async function createToken(fd: FormData) {
   const s = await getAdminSession();
   if (!s) throw new Error('Unauthorized');
@@ -32,11 +25,7 @@ export async function createToken(fd: FormData) {
   const app = await db.application.findUnique({ where: { id: appId } });
   if (!app) throw new Error('Application not found');
 
-  // ⚠️ CORREÇÃO: Removido db.appToken.create pois o modelo não existe no schema atual.
-  // Se você precisa dessa funcionalidade, adicione "model AppToken" ao prisma/schema.prisma.
-  // Por enquanto, apenas logamos e retornamos um token simulado ou lançamos erro.
-  
-  // Para não quebrar a UI que espera um token, vamos gerar um mas não salvar no DB (temporário)
+  // Gera um token temporário (já que não temos tabela AppToken no DB)
   const raw = generateRawToken('spt');
   
   await logAudit({ 
@@ -46,7 +35,7 @@ export async function createToken(fd: FormData) {
     actorId: s.adminId, 
     actorType: 'Admin', 
     ip: headers().get('x-forwarded-for') || 'unknown', 
-    metadata: { name, note: 'DB model missing' } as any 
+    metadata: { name, note: 'DB model missing - token generated but not persisted' } as any 
   });
   
   revalidatePath('/tokens');
@@ -57,8 +46,36 @@ export async function deleteToken(id: string) {
   const s = await getAdminSession();
   if (!s) throw new Error('Unauthorized');
   
-  // db.appToken.delete({ where: { id } }); // Removido pois modelo não existe
+  // Removido db.appToken.delete pois o modelo não existe no schema atual
   
-  await logAudit({ action: 'TOKEN_DELETED', entityType: 'AppToken', entityId: id, actorId: s.adminId, actorType: 'Admin' });
+  await logAudit({ 
+    action: 'TOKEN_DELETED', 
+    entityType: 'AppToken', 
+    entityId: id, 
+    actorId: s.adminId, 
+    actorType: 'Admin',
+    ip: headers().get('x-forwarded-for') || 'unknown'
+  });
+  
+  revalidatePath('/tokens');
+}
+
+export async function revokeToken(id: string) {
+  const s = await getAdminSession();
+  if (!s) throw new Error('Unauthorized');
+
+  // ⚠️ CORREÇÃO: Removido db.appToken.findUnique e db.appToken.delete
+  // pois o modelo AppToken não existe no prisma/schema.prisma atual.
+  
+  await logAudit({
+    action: 'TOKEN_REVOKED',
+    entityType: 'AppToken',
+    entityId: id,
+    actorId: s.adminId,
+    actorType: 'Admin',
+    ip: headers().get('x-forwarded-for') || 'unknown',
+    metadata: { note: 'Token revocation simulated - DB model missing' } as any
+  });
+
   revalidatePath('/tokens');
 }
