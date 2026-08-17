@@ -64,3 +64,30 @@ export async function deleteVariable(id: string) {
 
   revalidatePath('/variables');
 }
+
+export async function setAppVariable(fd: FormData) {
+  const s = await admin();
+  const appId = fd.get('appId') as string;
+  const key = fd.get('key') as string;
+  const value = fd.get('value') as string;
+
+  if (!appId || !key) throw new Error('Missing fields');
+
+  await db.variable.upsert({
+    where: { appId_key: { appId, key } },
+    update: { value },
+    create: { appId, key, value },
+  });
+
+  await logAudit({
+    action: 'VARIABLE_SET',
+    entityType: 'Variable',
+    entityId: appId,
+    actorId: s.adminId,
+    actorType: 'Admin',
+    ip: headers().get('x-forwarded-for') || 'unknown',
+    metadata: { key }
+  });
+
+  revalidatePath('/variables');
+}

@@ -32,6 +32,9 @@ model Application {
   maintenanceMode        Boolean       @default(false)
   minHwidLength          Int           @default(16)
   sessionExpirationMinutes Int         @default(1440)
+  minUsernameLength      Int           @default(3)
+  hwidResetCooldownMinutes Int         @default(0)
+  maintenanceMode        Boolean       @default(false)
   // ------------------------------------
 
   createdAt              DateTime      @default(now())

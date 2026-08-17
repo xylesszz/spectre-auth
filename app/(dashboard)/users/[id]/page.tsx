@@ -4,7 +4,17 @@ import { redirect, notFound } from 'next/navigation';
 import Link from 'next/link';
 import { PageHeader, Card, Badge, btn, input, label, Th, Td, TableShell } from '@/components/ui';
 import { ActionForm } from '@/components/client';
-import { setUserStatus, banUser, unbanUser, resetUserHwid, resetUserPassword, revokeUserSessions, deleteUser, setUserVariable, deleteUserVariable } from '@/actions/users';
+import { 
+  deleteUser, 
+  banUser, 
+  unbanUser, 
+  setUserStatus, 
+  resetUserHwid, 
+  revokeUserSessions, 
+  resetUserPassword,
+  setUserVariable,
+  deleteUserVariable
+} from '@/actions/users';
 
 export default async function UserDetailsPage({ params }: { params: { id: string } }) {
   const session = await getAdminSession();
@@ -12,11 +22,20 @@ export default async function UserDetailsPage({ params }: { params: { id: string
 
   const user = await db.user.findUnique({
     where: { id: params.id },
-    include: { app: true, licenses: { include: { app: true }, orderBy: { createdAt: 'desc' } }, sessions: { orderBy: { lastActivity: 'desc' }, take: 10 }, variables: true },
+    include: { 
+      app: true, 
+      licenses: { include: { app: true }, orderBy: { createdAt: 'desc' } }, 
+      sessions: { orderBy: { lastActivity: 'desc' }, take: 10 } 
+      // Removido: variables: true (não existe no schema)
+    },
   });
   if (!user) notFound();
 
-  const history = await db.auditLog.findMany({ where: { metadata: { path: ['username'], equals: user.username } }, orderBy: { createdAt: 'desc' }, take: 10 }).catch(() => []);
+  const history = await db.auditLog.findMany({ 
+    where: { metadata: { path: ['username'], equals: user.username } }, 
+    orderBy: { createdAt: 'desc' }, 
+    take: 10 
+  }).catch(() => []);
 
   return (
     <div className="space-y-6">
@@ -33,7 +52,7 @@ export default async function UserDetailsPage({ params }: { params: { id: string
         <Card title="Information">
           <div className="space-y-2 text-sm">
             <div className="flex justify-between"><span className="text-gray-500">Application</span><span className="text-white">{user.app?.name ?? '—'}</span></div>
-            <div className="flex justify-between"><span className="text-gray-500">Email</span><span className="text-white">{user.email ?? '—'}</span></div>
+            {/* Removido Email pois não existe no schema */}
             <div className="flex justify-between"><span className="text-gray-500">Created</span><span className="text-white">{new Date(user.createdAt).toLocaleString('pt-BR')}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Last Login</span><span className="text-white">{user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString('pt-BR') : '—'}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Last IP</span><span className="text-white font-mono text-xs">{user.lastIp ?? '—'}</span></div>
@@ -66,21 +85,10 @@ export default async function UserDetailsPage({ params }: { params: { id: string
           </div>
         </Card>
 
-        <Card title="User Variables">
-          <form action={setUserVariable.bind(null, user.id)} className="grid grid-cols-1 gap-2 mb-4">
-            <input name="name" placeholder="name" className={input} required />
-            <input name="value" placeholder="value" className={input} />
-            <button className={btn.blue}>Set Variable</button>
-          </form>
-          <div className="space-y-1">
-            {user.variables.map((v) => (
-              <div key={v.id} className="flex justify-between items-center px-2 py-1.5 bg-black/50 border border-gray-800 rounded text-xs">
-                <span className="text-gray-300 font-mono">{v.name} = {v.value}</span>
-                <ActionForm action={deleteUserVariable.bind(null, v.id)}><button className="text-red-500 hover:text-red-400">✕</button></ActionForm>
-              </div>
-            ))}
-            {user.variables.length === 0 && <p className="text-gray-600 text-xs text-center py-3">No variables</p>}
-          </div>
+        {/* Card de Variáveis removido temporariamente pois o modelo não existe no schema */}
+        {/* Se quiser adicionar, crie o modelo UserVariable no prisma/schema.prisma */}
+        <Card title="Notes">
+           <p className="text-gray-500 text-sm">User variables feature requires database schema update.</p>
         </Card>
       </div>
 
