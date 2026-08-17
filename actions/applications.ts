@@ -32,7 +32,10 @@ export async function createApplication(formData: FormData) {
   const name = formData.get('name') as string;
   if (!name || name.length < 2) throw new Error('Name must be at least 2 characters');
 
-  const slugBase = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const slugBase = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
   const slug = `${slugBase}-${randomBytes(3).toString('hex')}`;
 
   const publicId = generatePublicId();
@@ -45,8 +48,7 @@ export async function createApplication(formData: FormData) {
         data: {
           name,
           slug,
-          appId: publicId,
-          appSecret: '', 
+          appId: publicId, // este é o public id usado no header X-App-Id
           status: 'ACTIVE',
           hwidLock: true,
           minHwidLength: 16,
@@ -82,7 +84,14 @@ export async function createApplication(formData: FormData) {
     });
 
     revalidatePath('/applications');
-    return { success: true, appId: app.id, secret };
+
+    // Devolve publicId + secret em texto claro (só nesta resposta)
+    return {
+      success: true,
+      appId: app.id,       // id interno (cuid)
+      publicId,            // o que vai no X-App-Id
+      secret,              // o que vai no X-App-Secret (só aparece uma vez)
+    };
   } catch (error: any) {
     if (error.code === 'P2002') {
       throw new Error('Application name or ID already exists');
@@ -126,8 +135,13 @@ export async function regenerateAppSecret(id: string) {
     });
   }
 
+  // Desativa outras credenciais ativas antigas
   await db.applicationCredential.updateMany({
-    where: { appId: id, status: 'ACTIVE', NOT: { id: existingCred?.id } },
+    where: {
+      appId: id,
+      status: 'ACTIVE',
+      NOT: existingCred ? { id: existingCred.id } : undefined,
+    },
     data: { status: 'INACTIVE' },
   });
 
@@ -146,6 +160,7 @@ export async function regenerateAppSecret(id: string) {
 export async function deleteApplication(id: string) {
   if (!validateCsrf()) throw new Error('CSRF validation failed');
   const session = await admin();
+
   const app = await db.application.findUnique({ where: { id } });
   if (!app) throw new Error('Application not found');
 
@@ -176,11 +191,14 @@ export async function updateAppSettings(id: string, formData: FormData) {
   const maintenanceMode = formData.get('maintenanceMode') === 'on';
   const forceHwid = formData.get('forceHwid') === 'on';
   const vpnBlock = formData.get('vpnBlock') === 'on';
-  const sessionExpirationMinutes = parseInt(formData.get('sessionExpirationMinutes') as string) || 1440;
+  const sessionExpirationMinutes =
+    parseInt(formData.get('sessionExpirationMinutes') as string) || 1440;
   const minHwidLength = parseInt(formData.get('minHwidLength') as string) || 16;
-  const minUsernameLength = parseInt(formData.get('minUsernameLength') as string) || 3;
-  const hwidResetCooldownMinutes = parseInt(formData.get('hwidResetCooldownMinutes') as string) || 0;
-  const version = formData.get('version') as string || '1.0.0';
+  const minUsernameLength =
+    parseInt(formData.get('minUsernameLength') as string) || 3;
+  const hwidResetCooldownMinutes =
+    parseInt(formData.get('hwidResetCooldownMinutes') as string) || 0;
+  const version = (formData.get('version') as string) || '1.0.0';
 
   if (!name) throw new Error('Name is required');
 
@@ -207,12 +225,15 @@ export async function updateAppSettings(id: string, formData: FormData) {
 export async function setAppStatus(id: string, status: string) {
   if (!validateCsrf()) throw new Error('CSRF validation failed');
   await admin();
+
   if (!['ACTIVE', 'DISABLED', 'MAINTENANCE'].includes(status)) {
     throw new Error('Invalid status');
   }
+
   await db.application.update({
     where: { id },
     data: { status: status as any },
   });
+
   revalidatePath('/applications');
 }
