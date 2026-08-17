@@ -44,6 +44,7 @@ model Application {
   sessions    Session[]
   variables   Variable[]
   credentials ApplicationCredential[]
+  blacklistRules BlacklistRule[]
 }
 
 // ============================================================
