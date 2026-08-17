@@ -1,38 +1,31 @@
 import { PrismaClient } from '@prisma/client';
-import bcrypt from 'bcryptjs';
 import 'dotenv/config';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  const email = process.env.ADMIN_EMAIL;
-  const password = process.env.ADMIN_PASSWORD;
-
-  if (!email || !password) {
-    console.error('Missing ADMIN_EMAIL or ADMIN_PASSWORD in .env');
-    process.exit(1);
-  }
-
-  const existing = await prisma.admin.findUnique({ where: { email } });
+  // 1. Verifica se já existe algum admin
+  const existing = await prisma.admin.findFirst();
   if (existing) {
-    console.log('Admin already exists.');
+    console.log('✅ Admin already exists. Skipping creation.');
     return;
   }
 
-  const hash = await bcrypt.hash(password, 12);
+  // 2. Cria um registro admin (não é usado para autenticação por senha, apenas para associar sessões)
   await prisma.admin.create({
     data: {
-      email,
-      passwordHash: hash,
+      email: 'admin@spectre.local',    // email fictício – não usado para login
+      passwordHash: 'unused',           // não usado – o login é via ADMIN_KEY
     },
   });
 
-  console.log('Admin created successfully.');
+  console.log('✅ Admin created successfully.');
+  console.log('ℹ️  Use ADMIN_KEY from .env to log in.');
 }
 
 main()
   .catch((e) => {
-    console.error(e);
+    console.error('❌ Bootstrap failed:', e);
     process.exit(1);
   })
   .finally(async () => {

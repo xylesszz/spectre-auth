@@ -3,8 +3,7 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { db } from '@/lib/db';
-import bcrypt from 'bcryptjs';
-import { randomBytes, createHash } from 'crypto';
+import { randomBytes, createHash, timingSafeEqual } from 'crypto';
 import { headers } from 'next/headers';
 
 const COOKIE_NAME = 'spectre_admin_session';
@@ -15,19 +14,32 @@ function hashToken(token: string): string {
 }
 
 export async function login(formData: FormData) {
-  const email = String(formData.get('email') ?? '').trim().toLowerCase();
-  const password = String(formData.get('password') ?? '');
+  const key = String(formData.get('key') ?? '').trim();
   const ip = headers().get('x-forwarded-for')?.split(',').at(-1)?.trim() ?? 'unknown';
 
-  if (!email || !password) redirect('/login?error=1');
+  const admin = await db.admin.findFirst();
+  if (!admin) {
+    throw new Error('Admin not found. Run bootstrap first.');
+  }
 
-  const admin = await db.admin.findUnique({ where: { email } });
+  const expectedKey = process.env.ADMIN_KEY;
+  if (!expectedKey) {
+    throw new Error('ADMIN_KEY not configured in environment');
+  }
 
-  const dummyHash = '$2a$12$invalidhashpaddingtomakeconstanttime000000000000000000000';
-  const ok = await bcrypt.compare(password, admin?.passwordHash ?? dummyHash);
+  const keyBuffer = Buffer.from(key);
+  const expectedBuffer = Buffer.from(expectedKey);
 
-  if (!admin || !ok) {
-    // log falha
+  let valid = false;
+  if (keyBuffer.length === expectedBuffer.length) {
+    try {
+      valid = timingSafeEqual(keyBuffer, expectedBuffer);
+    } catch {
+      valid = false;
+    }
+  }
+
+  if (!valid) {
     redirect('/login?error=1');
   }
 
