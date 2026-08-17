@@ -18,21 +18,22 @@ export default async function OverviewPage() {
   };
 
   const now = new Date();
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
   // Buscar estatísticas com fallback seguro
   const [
-    apps,
-    users,
+    totalApps,
+    totalUsers,
     activeUsers,
     bannedUsers,
-    licenses,
-    activeLic,
-    expiredLic,
-    revokedLic,
+    totalLicenses,
+    activeLicenses,
+    expiredLicenses,
+    revokedLicenses,
     activeSessions,
-    apiRequests,
+    apiCalls,
     securityEvents,
-    recent
+    recentLogs
   ] = await Promise.all([
     safe(db.application.count(), 0),
     safe(db.user.count(), 0),
@@ -42,15 +43,16 @@ export default async function OverviewPage() {
     safe(db.license.count({ where: { status: 'ACTIVE' } }), 0),
     safe(db.license.count({ where: { status: 'EXPIRED' } }), 0),
     safe(db.license.count({ where: { status: 'REVOKED' } }), 0),
-    safe(db.userSession.count({ where: { expiresAt: { gt: now } } }), 0),
+    safe(db.session.count({ where: { expiresAt: { gt: now } } }), 0),
     safe(db.auditLog.count({ where: { action: { startsWith: 'API_' } } }), 0),
     safe(db.auditLog.count({
       where: {
         OR: [
+          { action: 'LOGIN_FAILED' },
           { action: { contains: 'BLOCKED' } },
-          { action: { contains: 'FAILED' } },
-          { action: { contains: 'BANNED' } }
-        ]
+          { action: { contains: 'RATE_LIMIT' } }
+        ],
+        createdAt: { gt: yesterday }
       }
     }), 0),
     safe(db.auditLog.findMany({
@@ -64,32 +66,34 @@ export default async function OverviewPage() {
       <PageHeader title="Dashboard" subtitle="Real-time overview of your authentication infrastructure" />
 
       <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-4">
-        <Stat label="Applications" value={apps} />
-        <Stat label="Users" value={users} />
+        <Stat label="Applications" value={totalApps} />
+        <Stat label="Users" value={totalUsers} />
         <Stat label="Active Users" value={activeUsers} accent="text-green-400" />
         <Stat label="Banned Users" value={bannedUsers} accent="text-red-400" />
-        <Stat label="Licenses" value={licenses} />
-        <Stat label="Active Licenses" value={activeLic} accent="text-green-400" />
-        <Stat label="Expired" value={expiredLic} accent="text-yellow-400" />
-        <Stat label="Revoked" value={revokedLic} accent="text-red-400" />
+        <Stat label="Licenses" value={totalLicenses} />
+        <Stat label="Active Licenses" value={activeLicenses} accent="text-green-400" />
+        <Stat label="Expired" value={expiredLicenses} accent="text-yellow-400" />
+        <Stat label="Revoked" value={revokedLicenses} accent="text-red-400" />
         <Stat label="Active Sessions" value={activeSessions} accent="text-blue-400" />
-        <Stat label="API Requests" value={apiRequests} accent="text-orange-400" />
+        <Stat label="API Requests" value={apiCalls} accent="text-orange-400" />
         <Stat label="Security Events" value={securityEvents} accent="text-red-400" />
       </div>
 
       <Card title="Recent Activity">
         <div className="space-y-1">
-          {recent.length === 0 ? (
+          {recentLogs.length === 0 ? (
             <p className="text-gray-600 text-sm text-center py-8">No events yet</p>
           ) : (
-            recent.map((e: any) => (
+            recentLogs.map((e: any) => (
               <div key={e.id} className="flex items-center justify-between px-3 py-2 rounded hover:bg-[#111] transition-colors">
                 <div className="flex items-center gap-3 min-w-0">
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-600 shrink-0" />
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                    e.action.includes('FAILED') || e.action.includes('BLOCKED') ? 'bg-red-600' : 'bg-green-600'
+                  }`} />
                   <span className="text-sm text-white font-medium truncate">{e.action}</span>
                   {e.metadata && (
                     <span className="text-xs text-gray-600 font-mono truncate hidden md:block">
-                      {JSON.stringify(e.metadata).slice(0, 60)}
+                      {typeof e.metadata === 'string' ? e.metadata.slice(0, 60) : JSON.stringify(e.metadata).slice(0, 60)}
                     </span>
                   )}
                 </div>
