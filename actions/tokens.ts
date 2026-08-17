@@ -5,77 +5,63 @@ import { revalidatePath } from 'next/cache';
 import { logAudit } from '@/lib/audit';
 import { getAdminSession } from '@/lib/session';
 import { headers } from 'next/headers';
-import { randomBytes } from 'crypto';
+import { randomBytes, createHash } from 'crypto';
 
-// Função auxiliar para gerar token
-function generateRawToken(prefix: string) {
-  return `${prefix}_${randomBytes(32).toString('hex')}`;
+function hashToken(token: string) {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+async function admin() {
+  const s = await getAdminSession();
+  if (!s) throw new Error('Unauthorized');
+  return s;
 }
 
 export async function createToken(fd: FormData) {
-  const s = await getAdminSession();
-  if (!s) throw new Error('Unauthorized');
-
+  const s = await admin();
   const appId = fd.get('appId') as string;
-  const name = fd.get('name') as string;
+  const name = fd.get('name') as string; // Usado apenas para log/auditoria
 
-  if (!appId || !name) throw new Error('Missing fields');
+  if (!appId) throw new Error('Application is required');
 
-  // Verifica se a aplicação existe
   const app = await db.application.findUnique({ where: { id: appId } });
   if (!app) throw new Error('Application not found');
 
-  // Gera um token temporário (já que não temos tabela AppToken no DB)
-  const raw = generateRawToken('spt');
+  const publicId = `pub_${randomBytes(8).toString('hex')}`;
+  const rawSecret = `sk_live_${randomBytes(24).toString('hex')}`;
   
+  await db.applicationCredential.create({
+    data: {
+      publicId,
+      secretHash: hashToken(rawSecret), // Nunca salvamos o secret em texto puro
+      appId,
+      status: 'ACTIVE',
+    }
+  });
+
   await logAudit({ 
     action: 'TOKEN_CREATED', 
-    entityType: 'AppToken', 
-    entityId: 'simulated', 
+    entityType: 'ApplicationCredential', 
     actorId: s.adminId, 
     actorType: 'Admin', 
     ip: headers().get('x-forwarded-for') || 'unknown', 
-    metadata: { name, note: 'DB model missing - token generated but not persisted' } as any 
-  });
-  
-  revalidatePath('/tokens');
-  return { token: raw };
-}
-
-export async function deleteToken(id: string) {
-  const s = await getAdminSession();
-  if (!s) throw new Error('Unauthorized');
-  
-  // Removido db.appToken.delete pois o modelo não existe no schema atual
-  
-  await logAudit({ 
-    action: 'TOKEN_DELETED', 
-    entityType: 'AppToken', 
-    entityId: id, 
-    actorId: s.adminId, 
-    actorType: 'Admin',
-    ip: headers().get('x-forwarded-for') || 'unknown'
+    metadata: { name, appId, publicId } 
   });
   
   revalidatePath('/tokens');
 }
 
 export async function revokeToken(id: string) {
-  const s = await getAdminSession();
-  if (!s) throw new Error('Unauthorized');
-
-  // ⚠️ CORREÇÃO: Removido db.appToken.findUnique e db.appToken.delete
-  // pois o modelo AppToken não existe no prisma/schema.prisma atual.
-  
-  await logAudit({
-    action: 'TOKEN_REVOKED',
-    entityType: 'AppToken',
-    entityId: id,
-    actorId: s.adminId,
-    actorType: 'Admin',
-    ip: headers().get('x-forwarded-for') || 'unknown',
-    metadata: { note: 'Token revocation simulated - DB model missing' } as any
+  await admin();
+  await db.applicationCredential.update({
+    where: { id },
+    data: { status: 'REVOKED' }
   });
+  revalidatePath('/tokens');
+}
 
+export async function deleteToken(id: string) {
+  await admin();
+  await db.applicationCredential.delete({ where: { id } });
   revalidatePath('/tokens');
 }
