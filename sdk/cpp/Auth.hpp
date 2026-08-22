@@ -23,10 +23,8 @@ namespace Spectre {
 
     class Auth {
     public:
-        // Construtor recomendado (com credenciais)
         Auth(const std::string& baseUrl, const std::string& appId, const std::string& appSecret);
-        // Construtor padrão (usando Config.hpp) – mantido para compatibilidade
-        Auth();
+        Auth();  // usa Config.hpp
         ~Auth();
 
         bool Initialize(std::string& error);
@@ -50,18 +48,15 @@ namespace Spectre {
         std::unique_ptr<SecretStore> m_credStore;
         std::string m_baseUrl;
         std::string m_sessionToken;
-        std::vector<uint8_t> m_hmacKey; // chave derivada para HMAC
+        std::vector<uint8_t> m_hmacKey;
 
-        // Métodos de anti-depuração ofuscados
-        static bool CheckDebugger();
-        static bool CheckVM();
-        static bool CheckTools();
+        // Métodos de segurança
+        static bool CheckEnvironment();  // anti‑debug + VM + ferramentas
+        static bool ValidateCert(PCCERT_CONTEXT pCert);  // SSL pinning
 
-        // SSL Pinning
-        static bool ValidateCert(PCCERT_CONTEXT pCert);
-
-        // HMAC com derivação de chave
+        // Derivação de chave (PBKDF2 via BCrypt)
         static std::vector<uint8_t> DeriveKey(const std::string& secret, const std::string& salt);
+
         static std::string GenerateNonce();
         static std::string HmacSha256(const std::string& data, const std::vector<uint8_t>& key);
         std::string BuildAuthHeader(const std::string& method,
@@ -77,8 +72,12 @@ namespace Spectre {
                      std::string& out,
                      std::string& err);
 
-        // Verificação de assinatura da resposta
         bool VerifyResponseSignature(const std::string& body, const std::string& signature);
+
+        // Gerenciamento COM (para WMI)
+        void InitCom();
+        void UninitCom();
+        bool m_comInitialized = false;
     };
 
 } // namespace Spectre

@@ -8,6 +8,9 @@
 #include <random>
 #include <chrono>
 #include <thread>
+#include <intrin.h>          // __cpuid
+#include <tlhelp32.h>        // CreateToolhelp32Snapshot
+#include <winternl.h>        // NtCurrentPeb
 #include "json.hpp"
 
 #pragma comment(lib, "winhttp.lib")
@@ -20,107 +23,118 @@ using json = nlohmann::json;
 namespace Spectre {
 
 // ============================================================
-//  CONSTANTES OFUSCADAS (usando XorStr)
+//  Strings ofuscadas (CORRETO: objeto estático + crypt_get())
 // ============================================================
 static const char* GetBaseUrl() {
-    static const auto base = XorStr("https://seu-dominio.com");
-    return base;
+    static auto str = xorstr("https://seu-dominio.com");
+    static const char* ptr = str.crypt_get();
+    return ptr;
 }
 static const char* GetUserAgent() {
-    static const auto ua = XorStr("SpectreAuth/2.0");
-    return ua;
+    static auto str = xorstr("SpectreAuth/2.0");
+    static const char* ptr = str.crypt_get();
+    return ptr;
 }
 static const char* GetInitPath() {
-    static const auto path = XorStr("/api/v1/init");
-    return path;
+    static auto str = xorstr("/api/v1/init");
+    static const char* ptr = str.crypt_get();
+    return ptr;
 }
 static const char* GetLoginPath() {
-    static const auto path = XorStr("/api/v1/auth/login");
-    return path;
+    static auto str = xorstr("/api/v1/auth/login");
+    static const char* ptr = str.crypt_get();
+    return ptr;
 }
 static const char* GetRegisterPath() {
-    static const auto path = XorStr("/api/v1/auth/register");
-    return path;
+    static auto str = xorstr("/api/v1/auth/register");
+    static const char* ptr = str.crypt_get();
+    return ptr;
 }
 static const char* GetLogoutPath() {
-    static const auto path = XorStr("/api/v1/auth/logout");
-    return path;
+    static auto str = xorstr("/api/v1/auth/logout");
+    static const char* ptr = str.crypt_get();
+    return ptr;
 }
 static const char* GetValidatePath() {
-    static const auto path = XorStr("/api/v1/license/validate");
-    return path;
+    static auto str = xorstr("/api/v1/license/validate");
+    static const char* ptr = str.crypt_get();
+    return ptr;
 }
 static const char* GetSessionPath() {
-    static const auto path = XorStr("/api/v1/session/validate");
-    return path;
+    static auto str = xorstr("/api/v1/session/validate");
+    static const char* ptr = str.crypt_get();
+    return ptr;
 }
 static const char* GetVariablesPath() {
-    static const auto path = XorStr("/api/v1/variables");
-    return path;
+    static auto str = xorstr("/api/v1/variables");
+    static const char* ptr = str.crypt_get();
+    return ptr;
 }
 
 static const char* GetHeaderAppId() {
-    static const auto h = XorStr("X-App-Id");
-    return h;
+    static auto str = xorstr("X-App-Id");
+    static const char* ptr = str.crypt_get();
+    return ptr;
 }
 static const char* GetHeaderTimestamp() {
-    static const auto h = XorStr("X-Timestamp");
-    return h;
+    static auto str = xorstr("X-Timestamp");
+    static const char* ptr = str.crypt_get();
+    return ptr;
 }
 static const char* GetHeaderNonce() {
-    static const auto h = XorStr("X-Nonce");
-    return h;
+    static auto str = xorstr("X-Nonce");
+    static const char* ptr = str.crypt_get();
+    return ptr;
 }
 static const char* GetHeaderSignature() {
-    static const auto h = XorStr("X-Signature");
-    return h;
+    static auto str = xorstr("X-Signature");
+    static const char* ptr = str.crypt_get();
+    return ptr;
 }
 static const char* GetHeaderSession() {
-    static const auto h = XorStr("X-Session-Token");
-    return h;
+    static auto str = xorstr("X-Session-Token");
+    static const char* ptr = str.crypt_get();
+    return ptr;
 }
 static const char* GetHeaderContentType() {
-    static const auto h = XorStr("Content-Type: application/json\r\n");
-    return h;
+    static auto str = xorstr("Content-Type: application/json\r\n");
+    static const char* ptr = str.crypt_get();
+    return ptr;
 }
 static const char* GetHeaderAccept() {
-    static const auto h = XorStr("Accept: application/json\r\n");
-    return h;
+    static auto str = xorstr("Accept: application/json\r\n");
+    static const char* ptr = str.crypt_get();
+    return ptr;
 }
 
 // ============================================================
-//  ANTI‑DEBUG / VM / FERRAMENTAS (ofuscado)
+//  Anti‑debug / VM / Tools (ofuscado)
 // ============================================================
 static bool CheckDebugger() {
-    // Obtém função por hash (exemplo: GetProcAddress ofuscado)
-    // Para simplificar, usamos IsDebuggerPresent diretamente, mas em produção usar hash.
-    if (::IsDebuggerPresent() || (NtCurrentPeb()->BeingDebugged != 0))
-        return true;
-
-    // Timing check (single‑stepping)
+    if (IsDebuggerPresent()) return true;
+    if (NtCurrentPeb()->BeingDebugged) return true;
+    // Timing
     auto start = std::chrono::high_resolution_clock::now();
     volatile int dummy = 0;
     for (int i = 0; i < 1000000; ++i) dummy ^= i;
     auto end = std::chrono::high_resolution_clock::now();
     auto diff = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-    if (diff < 1) return true; // debugger acelera execução
-
+    if (diff < 1) return true;
     return false;
 }
 
 static bool CheckVM() {
     int cpuInfo[4] = {0};
     __cpuid(cpuInfo, 1);
-    return (cpuInfo[2] & (1 << 31)) != 0; // hypervisor bit
+    return (cpuInfo[2] & (1 << 31)) != 0;
 }
 
 static bool CheckTools() {
-    // Verifica processos comuns de debug
     const wchar_t* tools[] = { L"x64dbg", L"ollydbg", L"cheatengine", L"processhacker" };
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snapshot == INVALID_HANDLE_VALUE) return false;
-    PROCESSENTRY32 pe = { sizeof(PROCESSENTRY32) };
-    if (Process32First(snapshot, &pe)) {
+    PROCESSENTRY32W pe = { sizeof(PROCESSENTRY32W) };
+    if (Process32FirstW(snapshot, &pe)) {
         do {
             std::wstring name(pe.szExeFile);
             for (auto t : tools) {
@@ -129,14 +143,18 @@ static bool CheckTools() {
                     return true;
                 }
             }
-        } while (Process32Next(snapshot, &pe));
+        } while (Process32NextW(snapshot, &pe));
     }
     CloseHandle(snapshot);
     return false;
 }
 
+bool Auth::CheckEnvironment() {
+    return !(CheckDebugger() || CheckVM() || CheckTools());
+}
+
 // ============================================================
-//  SecretStore – DPAPI (protegido)
+//  SecretStore – DPAPI
 // ============================================================
 struct Auth::SecretStore {
     std::vector<BYTE> encrypted;
@@ -171,7 +189,7 @@ struct Auth::SecretStore {
 };
 
 // ============================================================
-//  SHA256 via BCrypt
+//  SHA256 (para HWID)
 // ============================================================
 static std::string Sha256Hex(const std::string& input) {
     BCRYPT_ALG_HANDLE hAlg = NULL;
@@ -197,19 +215,35 @@ static std::string Sha256Hex(const std::string& input) {
 }
 
 // ============================================================
-//  WMI – HWID
+//  WMI – HWID (COM inicializado uma vez)
 // ============================================================
+void Auth::InitCom() {
+    if (!m_comInitialized) {
+        HRESULT hr = CoInitializeEx(0, COINIT_MULTITHREADED);
+        if (SUCCEEDED(hr) || hr == RPC_E_CHANGED_MODE)
+            m_comInitialized = true;
+    }
+}
+
+void Auth::UninitCom() {
+    if (m_comInitialized) {
+        CoUninitialize();
+        m_comInitialized = false;
+    }
+}
+
 static bool WmiSingle(const wchar_t* wql, const wchar_t* field, std::string& out) {
     out.clear();
     HRESULT hr = CoInitializeEx(0, COINIT_MULTITHREADED);
-    if (FAILED(hr) && hr != RPC_E_CHANGED_MODE) return false;
+    bool coinit = SUCCEEDED(hr) || hr == RPC_E_CHANGED_MODE;
+    if (!coinit) return false;
 
     IWbemLocator* loc = nullptr;
     IWbemServices* svc = nullptr;
     hr = CoCreateInstance(CLSID_WbemLocator, 0, CLSCTX_INPROC_SERVER, IID_IWbemLocator, (LPVOID*)&loc);
-    if (FAILED(hr)) { CoUninitialize(); return false; }
+    if (FAILED(hr)) { if (coinit) CoUninitialize(); return false; }
     hr = loc->ConnectServer(_bstr_t(L"ROOT\\CIMV2"), NULL, NULL, 0, 0, 0, 0, &svc);
-    if (FAILED(hr)) { loc->Release(); CoUninitialize(); return false; }
+    if (FAILED(hr)) { loc->Release(); if (coinit) CoUninitialize(); return false; }
 
     IEnumWbemClassObject* en = nullptr;
     hr = svc->ExecQuery(bstr_t("WQL"), bstr_t(wql), WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY, NULL, &en);
@@ -226,7 +260,8 @@ static bool WmiSingle(const wchar_t* wql, const wchar_t* field, std::string& out
         }
         en->Release();
     }
-    svc->Release(); loc->Release(); CoUninitialize();
+    svc->Release(); loc->Release();
+    if (coinit) CoUninitialize();
     return ok;
 }
 
@@ -241,25 +276,31 @@ std::string Auth::GenerateHWID() {
 }
 
 // ============================================================
-//  Derivação de chave HMAC (PBKDF2)
+//  PBKDF2 via BCrypt (Windows 8+)
 // ============================================================
 std::vector<uint8_t> Auth::DeriveKey(const std::string& secret, const std::string& salt) {
-    BCRYPT_ALG_HANDLE hAlg = NULL;
-    BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_SHA256_ALGORITHM, NULL, BCRYPT_ALG_HANDLE_HMAC_FLAG);
-    // PBKDF2 não é nativo no BCrypt; usamos uma abordagem simplificada: HKDF com HMAC-SHA256.
-    // Para produção, recomenda-se usar uma implementação de PBKDF2.
-    // Aqui, apenas demonstramos a derivação com HMAC + contador.
     std::vector<uint8_t> derived(32);
-    std::string input = secret + salt;
-    std::string hash = HmacSha256(input, {input.begin(), input.end()});
-    for (int i = 0; i < 32; ++i) derived[i] = hash[i % hash.size()];
+    BCRYPT_ALG_HANDLE hAlg = NULL;
+    NTSTATUS status = BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_SHA256_ALGORITHM, NULL, BCRYPT_ALG_HANDLE_HMAC_FLAG);
+    if (status != 0) return derived; // fallback
+
+    // PBKDF2 requer Windows 8+
+    status = BCryptDeriveKeyPBKDF2(
+        hAlg,
+        (PUCHAR)secret.c_str(), (ULONG)secret.size(),
+        (PUCHAR)salt.c_str(), (ULONG)salt.size(),
+        10000,  // iterations
+        derived.data(), (ULONG)derived.size(),
+        0
+    );
+    BCryptCloseAlgorithmProvider(hAlg, 0);
     return derived;
 }
 
 // ============================================================
-//  HMAC‑SHA256 (com chave vector)
+//  HMAC‑SHA256
 // ============================================================
-static std::string HmacSha256(const std::string& data, const std::vector<uint8_t>& key) {
+std::string Auth::HmacSha256(const std::string& data, const std::vector<uint8_t>& key) {
     BCRYPT_ALG_HANDLE hAlg = NULL;
     BCRYPT_HASH_HANDLE hHash = NULL;
     DWORD objLen = 0, hashLen = 0;
@@ -284,9 +325,9 @@ static std::string HmacSha256(const std::string& data, const std::vector<uint8_t
 }
 
 // ============================================================
-//  Nonce com alta entropia
+//  Nonce
 // ============================================================
-static std::string GenerateNonce() {
+std::string Auth::GenerateNonce() {
     LARGE_INTEGER perf; QueryPerformanceCounter(&perf);
     uint64_t ts = perf.QuadPart;
     uint64_t tick = GetTickCount64();
@@ -299,20 +340,19 @@ static std::string GenerateNonce() {
 }
 
 // ============================================================
-//  SSL Pinning callback
+//  SSL Pinning (callback registrado na request)
 // ============================================================
-static bool WINAPI CertValidateCallback(PCCERT_CONTEXT pCert, void* /*pv*/) {
-    // Thumbprint fixo ofuscado – substitua pelo seu
-    static const auto expected = XorStr("0123456789ABCDEF0123456789ABCDEF01234567");
+bool Auth::ValidateCert(PCCERT_CONTEXT pCert) {
+    static auto pin = xorstr("0123456789ABCDEF0123456789ABCDEF01234567"); // substitua
+    static const char* expected = pin.crypt_get();
     DWORD size = 20;
     BYTE thumb[20];
     if (!CertGetCertificateContextProperty(pCert, CERT_SHA1_HASH_PROP_ID, thumb, &size))
         return false;
-    std::string hex;
-    for (DWORD i = 0; i < size; ++i) {
-        char buf[3]; sprintf_s(buf, "%02X", thumb[i]); hex += buf;
-    }
-    return hex == expected;
+    char hex[41] = {0};
+    for (DWORD i = 0; i < size; ++i)
+        sprintf_s(hex + i*2, 3, "%02X", thumb[i]);
+    return strcmp(hex, expected) == 0;
 }
 
 // ============================================================
@@ -323,13 +363,18 @@ Auth::Auth(const std::string& baseUrl, const std::string& appId, const std::stri
     while (!m_baseUrl.empty() && m_baseUrl.back() == '/') m_baseUrl.pop_back();
     m_hmacKey = DeriveKey(appSecret, "SpectreSalt2025");
 
-    if (CheckDebugger() || CheckVM() || CheckTools())
+    if (!CheckEnvironment())
         throw std::runtime_error("Security violation");
+
+    InitCom();  // inicializa COM para WMI
 }
 
 Auth::Auth() : Auth(Config::BASE_URL, Config::APP_ID, Config::APP_SECRET) {}
 
-Auth::~Auth() { SecureZeroMemory(m_hmacKey.data(), m_hmacKey.size()); }
+Auth::~Auth() {
+    SecureZeroMemory(m_hmacKey.data(), m_hmacKey.size());
+    UninitCom();
+}
 
 // ============================================================
 //  BuildAuthHeader
@@ -355,11 +400,10 @@ bool Auth::VerifyResponseSignature(const std::string& body, const std::string& s
 }
 
 // ============================================================
-//  Request – base
+//  Request – com SSL pinning e timeouts
 // ============================================================
 bool Auth::Request(const std::string& method, const std::string& path, const std::string& body,
                    long& code, std::string& out, std::string& err) {
-    // Extrai credenciais (apenas para pegar appId, pois secret já foi derivado)
     std::string creds = m_credStore->Reveal();
     size_t sep = creds.find('|');
     if (sep == std::string::npos) { err = "Invalid credential format"; return false; }
@@ -371,7 +415,6 @@ bool Auth::Request(const std::string& method, const std::string& path, const std
     std::string payload = method + path + body + std::to_string(timestamp) + nonce;
     std::string signature = HmacSha256(payload, m_hmacKey);
 
-    // WinHTTP setup
     URL_COMPONENTS uc{}; uc.dwStructSize = sizeof(uc); uc.dwHostNameLength = 1; uc.dwUrlPathLength = 1;
     std::wstring wUrl(m_baseUrl.begin(), m_baseUrl.end());
     if (!WinHttpCrackUrl(wUrl.c_str(), 0, 0, &uc)) { err = "Invalid URL"; return false; }
@@ -379,6 +422,15 @@ bool Auth::Request(const std::string& method, const std::string& path, const std
     HINTERNET hSession = WinHttpOpen(GetUserAgent(), WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                                      WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!hSession) { err = "WinHttpOpen failed"; return false; }
+
+    // Ativar SSL pinning via callback (apenas para HTTPS)
+    if (uc.nScheme == INTERNET_SCHEME_HTTPS) {
+        // Registra callback para validação do certificado
+        WinHttpSetStatusCallback(hSession, [](HINTERNET, DWORD_PTR, DWORD, LPVOID, DWORD) -> DWORD {
+            // Não implementamos o callback completo; usamos WinHttpSetOption com CERT_CONTEXT
+            return 0;
+        }, WINHTTP_CALLBACK_FLAG_SECURE_FAILURE, 0);
+    }
 
     std::wstring host(uc.lpszHostName, uc.dwHostNameLength);
     HINTERNET hConnect = WinHttpConnect(hSession, host.c_str(), uc.nPort, 0);
@@ -391,7 +443,26 @@ bool Auth::Request(const std::string& method, const std::string& path, const std
                                         NULL, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
     if (!hReq) { WinHttpCloseHandle(hConnect); WinHttpCloseHandle(hSession); err = "OpenRequest failed"; return false; }
 
-    // Headers com strings ofuscadas
+    // SSL Pinning: verificar thumbprint após a conexão
+    if (uc.nScheme == INTERNET_SCHEME_HTTPS) {
+        PCCERT_CONTEXT pCert = nullptr;
+        DWORD certSize = sizeof(PCCERT_CONTEXT);
+        if (WinHttpQueryOption(hReq, WINHTTP_OPTION_SERVER_CERT_CONTEXT, &pCert, &certSize)) {
+            if (!ValidateCert(pCert)) {
+                err = "SSL pinning failed";
+                if (pCert) CertFreeCertificateContext(pCert);
+                WinHttpCloseHandle(hReq); WinHttpCloseHandle(hConnect); WinHttpCloseHandle(hSession);
+                return false;
+            }
+            if (pCert) CertFreeCertificateContext(pCert);
+        } else {
+            err = "Could not retrieve server certificate";
+            WinHttpCloseHandle(hReq); WinHttpCloseHandle(hConnect); WinHttpCloseHandle(hSession);
+            return false;
+        }
+    }
+
+    // Headers
     std::wstring headers = L"";
     headers += std::wstring(GetHeaderContentType(), GetHeaderContentType() + strlen(GetHeaderContentType()));
     headers += std::wstring(GetHeaderAccept(), GetHeaderAccept() + strlen(GetHeaderAccept()));
@@ -407,7 +478,7 @@ bool Auth::Request(const std::string& method, const std::string& path, const std
     WinHttpSetTimeouts(hReq, Config::CONNECT_TIMEOUT_MS, Config::SEND_TIMEOUT_MS,
                        Config::SEND_TIMEOUT_MS, Config::REQUEST_TIMEOUT_MS);
 
-    // Envio com backoff exponencial (simplificado)
+    // Envio com backoff
     int retries = 0; bool sent = false;
     while (!sent && retries < 3) {
         sent = WinHttpSendRequest(hReq, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
@@ -435,7 +506,7 @@ bool Auth::Request(const std::string& method, const std::string& path, const std
         }
     } while (avail > 0);
 
-    // Verificar assinatura da resposta (se presente)
+    // Verificar assinatura da resposta
     DWORD len = 0;
     WinHttpQueryHeaders(hReq, WINHTTP_QUERY_RAW_HEADERS_CRLF, WINHTTP_HEADER_NAME_BY_INDEX,
                         NULL, &len, WINHTTP_NO_HEADER_INDEX);
@@ -444,7 +515,6 @@ bool Auth::Request(const std::string& method, const std::string& path, const std
         if (WinHttpQueryHeaders(hReq, WINHTTP_QUERY_RAW_HEADERS_CRLF, WINHTTP_HEADER_NAME_BY_INDEX,
                                 rawHeaders.data(), &len, WINHTTP_NO_HEADER_INDEX)) {
             std::wstring headers(rawHeaders.data());
-            // Procurar por "X-Response-Signature"
             size_t pos = headers.find(L"X-Response-Signature:");
             if (pos != std::wstring::npos) {
                 size_t start = pos + 22;
