@@ -1,4 +1,3 @@
-import { db } from '@/lib/db';
 import { getAdminSession } from '@/lib/session';
 import { logout } from '@/actions/admin';
 import { ActionForm } from '@/components/client';
@@ -6,11 +5,9 @@ import NavLinks from './nav-links';
 
 export default async function Sidebar() {
   const session = await getAdminSession();
-
-  // 🛡️ Trata o Master (login via chave) sem quebrar
-  const admin = session?.adminId === 'MASTER'
-    ? { id: 'MASTER', email: 'master@system.local' }
-    : await db.admin.findUnique({ where: { id: session?.adminId || '' } }).catch(() => null);
+  
+  // Não precisa buscar no banco, já sabemos que é o Master
+  const adminEmail = 'master@system.local';
 
   return (
     <aside className="w-64 bg-[#0a0a0a] border-r border-gray-800 flex flex-col min-h-screen sticky top-0">
@@ -20,17 +17,16 @@ export default async function Sidebar() {
         </a>
       </div>
 
-      {/* Links de navegação ficam em um componente client separado */}
       <NavLinks />
 
       <div className="p-4 border-t border-gray-800">
         <div className="flex items-center gap-3 mb-3 px-2">
           <div className="w-8 h-8 rounded-full bg-red-950 border border-red-900 flex items-center justify-center text-red-400 text-xs font-bold">
-            {admin?.email?.[0]?.toUpperCase() || 'A'}
+            M
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-xs text-gray-500 truncate">Logged in as</p>
-            <p className="text-sm text-white font-medium truncate">{admin?.email || 'Unknown'}</p>
+            <p className="text-sm text-white font-medium truncate">{adminEmail}</p>
           </div>
         </div>
         <ActionForm action={logout} confirmText="Are you sure you want to logout?">

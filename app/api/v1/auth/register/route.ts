@@ -27,11 +27,8 @@ export async function POST(req: NextRequest) {
   try { body = schema.parse(await req.json()); }
   catch { return apiError('INVALID_INPUT', 'Invalid payload.', 400); }
 
-  // Fallback para 3 caso o Prisma Client local esteja desatualizado
-  const minUsernameLength = (app as any).minUsernameLength ?? 3;
-  
-  if (body.username.trim().length < minUsernameLength)
-    return apiError('USERNAME_TOO_SHORT', `Minimum username length: ${minUsernameLength}.`);
+  if (body.username.trim().length < app.minUsernameLength)
+    return apiError('USERNAME_TOO_SHORT', `Minimum username length: ${app.minUsernameLength}.`);
   if (app.forceHwid && !body.hwid) return apiError('HWID_REQUIRED', 'HWID is required.', 422);
   const hwidHash = body.hwid ? hashHwid(body.hwid) : null;
   if (body.hwid && body.hwid.trim().length < app.minHwidLength)
