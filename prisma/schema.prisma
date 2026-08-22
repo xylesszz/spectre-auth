@@ -13,37 +13,36 @@ model Admin {
   passwordHash String
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
-  sessions     AdminSession[]
 }
 
 model Application {
-  id                     String        @id @default(cuid())
-  name                   String
-  slug                   String        @unique
-  appId                  String        @unique @map("app_id")
-  status                 AppStatus     @default(ACTIVE)
-  version                String?
-  description            String?
+  id                       String        @id @default(cuid())
+  name                     String
+  slug                     String        @unique
+  appId                    String        @unique @map("app_id")
+  appSecret                String        @map("app_secret")
+  status                   AppStatus     @default(ACTIVE)
+  version                  String?
+  description              String?
   
-  // Configurações de Segurança
-  hwidLock               Boolean       @default(true)
-  forceHwid              Boolean       @default(false)
-  vpnBlock               Boolean       @default(false)
-  maintenanceMode        Boolean       @default(false)
-  minHwidLength          Int           @default(16)
-  sessionExpirationMinutes Int         @default(1440)
-  minUsernameLength      Int           @default(3)
-  hwidResetCooldownMinutes Int         @default(0)
+  hwidLock                 Boolean       @default(true)
+  forceHwid                Boolean       @default(false)
+  vpnBlock                 Boolean       @default(false)
+  maintenanceMode          Boolean       @default(false)
+  minHwidLength            Int           @default(16)
+  sessionExpirationMinutes Int           @default(1440)
+  minUsernameLength        Int           @default(3)
+  hwidResetCooldownMinutes Int           @default(0)
 
-  createdAt              DateTime      @default(now())
-  updatedAt              DateTime      @updatedAt
+  createdAt                DateTime      @default(now())
+  updatedAt                DateTime      @updatedAt
 
-  users                  User[]
-  licenses               License[]
-  sessions               Session[]
-  variables              Variable[]
-  credentials            ApplicationCredential[]
-  blacklistRules         BlacklistRule[]
+  users                    User[]
+  licenses                 License[]
+  sessions                 Session[]
+  variables                Variable[]
+  credentials              ApplicationCredential[]
+  blacklistRules           BlacklistRule[]
 
   @@map("applications")
 }
@@ -140,22 +139,18 @@ model Variable {
 
 model BlacklistRule {
   id        String       @id @default(cuid())
-  type      String       // IP, HWID, USER, LICENSE
+  type      String
   value     String
   reason    String?
-  appId     String?      // Null = Global
+  appId     String?
   app       Application? @relation(fields: [appId], references: [id], onDelete: Cascade)
-  
-  kind      String       @default("BLACKLIST") // CORRIGIDO: "BLACKLIST" em vez de "BLOCK"
+  kind      String       @default("BLACKLIST")
   createdBy String?
   expiresAt DateTime?
   active    Boolean      @default(true)
-  
   createdAt DateTime     @default(now())
 
   @@index([type, value])
-  @@index([active, kind])   // NOVO
-  @@index([appId, active])  // NOVO
 }
 
 model AuditLog {
@@ -182,16 +177,4 @@ model RateLimitEntry {
   createdAt DateTime @default(now())
 
   @@index([resetAt])
-}
-
-model AdminSession {
-  id        String   @id @default(cuid())
-  tokenHash String   @unique
-  adminId   String
-  admin     Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
-  expiresAt DateTime
-  ip        String?
-  createdAt DateTime @default(now())
-
-  @@index([tokenHash])
 }
