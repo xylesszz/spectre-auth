@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
-import './globals.css';
+import './globals.css'; // <--- Deve ser './globals.css' se o arquivo está na mesma pasta
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -11,10 +11,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR" className="dark">
-      <body className={`${inter.className} bg-black text-gray-100 antialiased`}>
-        {children}
-      </body>
+    <html lang="pt-BR">
+      <body className={inter.className}>{children}</body>
     </html>
   );
 }
