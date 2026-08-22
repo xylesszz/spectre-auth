@@ -4,10 +4,16 @@ import { db } from '@/lib/db';
 import bcrypt from 'bcryptjs';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { randomBytes } from 'crypto';
+import { createHmac } from 'crypto';
 
 const SESSION_DAYS = 7;
 const COOKIE_NAME = 'admin_session';
+// Usa a ADMIN_KEY como segredo para assinar os cookies
+const SECRET = process.env.ADMIN_KEY || 'super_secret_fallback_key_change_me';
+
+function sign(data: string) {
+  return createHmac('sha256', SECRET).update(data).digest('hex');
+}
 
 export async function login(formData: FormData) {
   const key = formData.get('key') as string;
@@ -18,7 +24,9 @@ export async function login(formData: FormData) {
 
   // 1. Tenta login com Chave Mestra (ADMIN_KEY)
   if (key && ADMIN_KEY && key === ADMIN_KEY) {
-    cookies().set(COOKIE_NAME, 'key_auth_' + randomBytes(16).toString('hex'), {
+    const payload = 'MASTER';
+    const sig = sign(payload);
+    cookies().set(COOKIE_NAME, `${payload}.${sig}`, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       maxAge: SESSION_DAYS * 24 * 60 * 60,
@@ -35,7 +43,9 @@ export async function login(formData: FormData) {
     const isValid = await bcrypt.compare(password, admin.passwordHash);
     if (!isValid) throw new Error('Invalid credentials');
 
-    cookies().set(COOKIE_NAME, 'admin_' + randomBytes(16).toString('hex'), {
+    const payload = admin.id;
+    const sig = sign(payload);
+    cookies().set(COOKIE_NAME, `${payload}.${sig}`, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       maxAge: SESSION_DAYS * 24 * 60 * 60,
@@ -46,7 +56,9 @@ export async function login(formData: FormData) {
 
   // 3. Se passou a senha mestra no campo de senha normal
   if (password && ADMIN_KEY && password === ADMIN_KEY) {
-    cookies().set(COOKIE_NAME, 'key_auth_' + randomBytes(16).toString('hex'), {
+    const payload = 'MASTER';
+    const sig = sign(payload);
+    cookies().set(COOKIE_NAME, `${payload}.${sig}`, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       maxAge: SESSION_DAYS * 24 * 60 * 60,

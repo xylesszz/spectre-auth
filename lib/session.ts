@@ -1,34 +1,27 @@
 import { cookies } from 'next/headers';
-import { db } from './db';
-import { createHash } from 'crypto';
+import { createHmac } from 'crypto';
 
-export interface AdminSession {
-  adminId: string;
-  email: string;
+const COOKIE_NAME = 'admin_session';
+const SECRET = process.env.ADMIN_KEY || 'super_secret_fallback_key_change_me';
+
+function verify(data: string, signature: string) {
+  return createHmac('sha256', SECRET).update(data).digest('hex') === signature;
 }
 
-function hashToken(token: string): string {
-  return createHash('sha256').update(`admin_session:${token}`).digest('hex');
-}
+export async function getAdminSession() {
+  const c = cookies().get(COOKIE_NAME);
+  if (!c?.value) return null;
+  
+  const [payload, sig] = c.value.split('.');
+  
+  // Verifica se a assinatura é válida (evita que alguém forge o cookie)
+  if (!payload || !sig || !verify(payload, sig)) return null;
 
-export async function getAdminSession(): Promise<AdminSession | null> {
-  try {
-    const c = cookies().get('spectre_admin_session');
-    if (!c?.value || c.value.length < 32) return null;
-
-    const session = await db.adminSession.findUnique({
-      where: { tokenHash: hashToken(c.value) },
-      include: { admin: true },
-    });
-
-    if (!session) return null;
-    if (session.expiresAt < new Date()) {
-      await db.adminSession.delete({ where: { id: session.id } }).catch(() => {});
-      return null;
-    }
-
-    return { adminId: session.admin.id, email: session.admin.email };
-  } catch {
-    return null;
+  // Se o payload for 'MASTER', é o login via ADMIN_KEY
+  if (payload === 'MASTER') {
+    return { adminId: 'MASTER', email: 'master@system.local' };
   }
+
+  // Caso contrário, o payload é o ID do Admin do banco de dados
+  return { adminId: payload, email: 'admin@system.local' };
 }
