@@ -1,84 +1,60 @@
 'use server';
 
+import { db } from '@/lib/db';
+import bcrypt from 'bcryptjs';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { db } from '@/lib/db';
-import { randomBytes, createHash, timingSafeEqual } from 'crypto';
-import { headers } from 'next/headers';
+import { randomBytes } from 'crypto';
 
-const COOKIE_NAME = 'spectre_admin_session';
 const SESSION_DAYS = 7;
+const COOKIE_NAME = 'admin_session';
 
-function hashToken(token: string): string {
-  return createHash('sha256').update(`admin_session:${token}`).digest('hex');
-}
+export async function loginAdmin(formData: FormData) {
+  const email = formData.get('email') as string;
+  const password = formData.get('password') as string;
 
-export async function login(formData: FormData) {
-  const key = String(formData.get('key') ?? '').trim();
-  const ip = headers().get('x-forwarded-for')?.split(',').at(-1)?.trim() ?? 'unknown';
+  if (!email || !password) throw new Error('Email and password are required');
 
-  // 1. Verificar a chave primeiro (não precisa de admin no banco ainda)
-  const expectedKey = process.env.ADMIN_KEY;
-  if (!expectedKey) {
-    console.error('ADMIN_KEY not configured');
-    redirect('/login?error=1');
-  }
+  const admin = await db.admin.findUnique({ where: { email } });
+  if (!admin) throw new Error('Invalid credentials');
 
-  const keyBuffer = Buffer.from(key);
-  const expectedBuffer = Buffer.from(expectedKey);
+  const isValid = await bcrypt.compare(password, admin.passwordHash);
+  if (!isValid) throw new Error('Invalid credentials');
 
-  let valid = false;
-  if (keyBuffer.length === expectedBuffer.length) {
-    try {
-      valid = timingSafeEqual(keyBuffer, expectedBuffer);
-    } catch {
-      valid = false;
-    }
-  }
+  // Gerar token simples para o cookie
+  // Como não temos tabela AdminSession no schema, a sessão é gerenciada via cookie.
+  // A validação real acontece no middleware ou na lib/session.ts (getAdminSession).
+  const token = randomBytes(32).toString('hex');
 
-  if (!valid) {
-    redirect('/login?error=1');
-  }
-
-  // 2. Se a chave é válida, garantir que existe um admin no banco
-  let admin = await db.admin.findFirst();
-  if (!admin) {
-    // Cria admin automaticamente (apenas uma vez)
-    admin = await db.admin.create({
-      data: {
-        email: 'admin@spectre.local',
-        passwordHash: 'unused',
-      },
-    });
-    console.log('✅ Admin created automatically.');
-  }
-
-  // 3. Criar sessão
-  const rawToken = randomBytes(48).toString('hex');
-  const tokenHash = hashToken(rawToken);
-  const expiresAt = new Date(Date.now() + SESSION_DAYS * 86400000);
-
-  await db.adminSession.create({
-    data: { tokenHash, adminId: admin.id, expiresAt, ip },
-  });
-
-  cookies().set(COOKIE_NAME, rawToken, {
+  cookies().set(COOKIE_NAME, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    maxAge: SESSION_DAYS * 24 * 60 * 60, // 7 dias em segundos
     path: '/',
-    maxAge: SESSION_DAYS * 86400,
   });
 
   redirect('/');
 }
 
-export async function logout() {
-  const c = cookies().get(COOKIE_NAME);
-  if (c?.value) {
-    const tokenHash = hashToken(c.value);
-    await db.adminSession.deleteMany({ where: { tokenHash } }).catch(() => {});
-  }
+export async function logoutAdmin() {
   cookies().delete(COOKIE_NAME);
   redirect('/login');
+}
+
+// Se você tiver uma função de "Login com Chave Fixa" (ADMIN_KEY), ela seria assim:
+export async function loginWithKey(key: string) {
+  const ADMIN_KEY = process.env.ADMIN_KEY;
+  if (!ADMIN_KEY) throw new Error('ADMIN_KEY not configured');
+  
+  if (key !== ADMIN_KEY) throw new Error('Invalid key');
+
+  // Seta um cookie simples para indicar que o admin está logado
+  cookies().set(COOKIE_NAME, 'key_auth', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: SESSION_DAYS * 24 * 60 * 60,
+    path: '/',
+  });
+
+  redirect('/');
 }
