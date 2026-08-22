@@ -2,17 +2,17 @@
 
 import { db } from '@/lib/db';
 import { revalidatePath } from 'next/cache';
-import { randomBytes } from 'crypto';
+import { randomBytes, createHash } from 'crypto';
 import { getAdminSession } from '@/lib/session';
 import { logAudit } from '@/lib/audit';
 import { headers } from 'next/headers';
 
-function generatePublicId() {
-  return `pub_${randomBytes(16).toString('hex')}`;
-}
-
 function generateSecret() {
   return `sk_live_${randomBytes(32).toString('hex')}`;
+}
+
+function hashToken(token: string) {
+  return createHash('sha256').update(token).digest('hex');
 }
 
 async function admin() {
@@ -27,25 +27,27 @@ export async function createApplication(formData: FormData) {
   const session = await admin();
 
   const name = formData.get('name') as string;
+  const slug = formData.get('slug') as string;
+  const version = (formData.get('version') as string) || '1.0.0';
+  const description = (formData.get('description') as string) || null;
   
   if (!name || name.length < 2) throw new Error('Name must be at least 2 characters');
-
-  // Gera um slug automático baseado no nome + random para garantir unicidade
-  const slugBase = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  const slug = `${slugBase}-${randomBytes(3).toString('hex')}`;
+  if (!slug) throw new Error('Slug / ID is required');
   
-  const publicId = generatePublicId();
-  const secret = generateSecret(); // <--- CORREÇÃO: Gerando o secret
+  const secret = generateSecret();
+  const secretHash = hashToken(secret);
 
   try {
     const app = await db.$transaction(async (tx) => {
+      // 1. Cria a Aplicação (sem appSecret)
       const newApp = await tx.application.create({
         data: {
           name,
           slug,
-          appId: publicId,
-          appSecret: secret, // <--- CORREÇÃO: Adicionado appSecret aqui
+          appId: slug, // Usando o slug como o identificador público (X-App-Id)
           status: 'ACTIVE',
+          version,
+          description,
           hwidLock: true,
           minHwidLength: 16,
           maintenanceMode: false,
@@ -54,8 +56,19 @@ export async function createApplication(formData: FormData) {
           sessionExpirationMinutes: 1440,
           minUsernameLength: 3,
           hwidResetCooldownMinutes: 0,
-        },
+        } as any, // <--- ADICIONE ESTE "as any" AQUI PARA BURLAR O CACHE DO TS
       });
+
+      // 2. Cria a Credencial da API vinculada à aplicação
+      await tx.applicationCredential.create({
+        data: {
+          publicId: slug,
+          secretHash: secretHash,
+          appId: newApp.id,
+          status: 'ACTIVE',
+        }
+      });
+
       return newApp;
     });    
 
@@ -70,10 +83,11 @@ export async function createApplication(formData: FormData) {
     });
 
     revalidatePath('/applications');
-    return { success: true, appId: app.appId, appSecret: secret };
+    // Retorna o secret em texto puro para o modal mostrar UMA VEZ
+    return { success: true, appId: app.appId, secret: secret };
   } catch (error: any) {
     if (error.code === 'P2002') {
-      throw new Error('Application name or ID already exists');
+      throw new Error('Application slug already exists');
     }
     throw error;
   }
@@ -85,6 +99,7 @@ export async function deleteApplication(id: string) {
   const app = await db.application.findUnique({ where: { id } });
   if (!app) throw new Error('Application not found');
 
+  // Deleta a aplicação (o Cascade no schema vai deletar as credenciais junto)
   await db.application.delete({ where: { id } });
   
   await logAudit({
@@ -103,11 +118,31 @@ export async function regenerateAppSecret(id: string) {
   const session = await admin();
   
   const newSecret = generateSecret();
+  const secretHash = hashToken(newSecret);
   
-  await db.application.update({
-    where: { id },
-    data: { appSecret: newSecret },
-  });
+  // Busca a credencial ativa atual
+  const cred = await db.applicationCredential.findFirst({ where: { appId: id, status: 'ACTIVE' } });
+  
+  if (cred) {
+    // Atualiza o hash da credencial existente
+    await db.applicationCredential.update({
+      where: { id: cred.id },
+      data: { secretHash },
+    });
+  } else {
+    // Se não existir, cria uma nova
+    const app = await db.application.findUnique({ where: { id } });
+    if (!app) throw new Error('Application not found');
+    
+    await db.applicationCredential.create({
+      data: {
+        publicId: app.appId,
+        secretHash,
+        appId: id,
+        status: 'ACTIVE',
+      }
+    });
+  }
 
   await logAudit({
     action: 'APPLICATION_SECRET_REGENERATED',
@@ -119,30 +154,37 @@ export async function regenerateAppSecret(id: string) {
   });
 
   revalidatePath(`/applications/${id}`);
-  return { success: true, newSecret };
+  revalidatePath('/applications');
+  
+  // Retorna o novo secret para ser exibido no modal
+  return { success: true, secret: newSecret };
 }
 
 export async function updateAppSettings(id: string, formData: FormData) {
   await admin();
 
-  const name = formData.get('name') as string;
+  const version = formData.get('version') as string;
   const hwidLock = formData.get('hwidLock') === 'on';
   const maintenanceMode = formData.get('maintenanceMode') === 'on';
   const forceHwid = formData.get('forceHwid') === 'on';
   const vpnBlock = formData.get('vpnBlock') === 'on';
   const sessionExpirationMinutes = parseInt(formData.get('sessionExpirationMinutes') as string) || 1440;
-
-  if (!name) throw new Error('Name is required');
+  const minHwidLength = parseInt(formData.get('minHwidLength') as string) || 16;
+  const minUsernameLength = parseInt(formData.get('minUsernameLength') as string) || 3;
+  const hwidResetCooldownMinutes = parseInt(formData.get('hwidResetCooldownMinutes') as string) || 0;
 
   await db.application.update({
     where: { id },
     data: {
-      name,
+      version,
       hwidLock,
       maintenanceMode,
       forceHwid,
       vpnBlock,
       sessionExpirationMinutes,
+      minHwidLength,
+      minUsernameLength,
+      hwidResetCooldownMinutes,
     },
   });
 
@@ -153,7 +195,7 @@ export async function updateAppSettings(id: string, formData: FormData) {
 export async function setAppStatus(id: string, status: string) {
   await admin();
   
-  if (!['ACTIVE', 'DISABLED', 'MAINTENANCE'].includes(status)) {
+  if (!['ACTIVE', 'DISABLED', 'MAINTENANCE', 'PAUSED'].includes(status)) {
     throw new Error('Invalid status');
   }
 
