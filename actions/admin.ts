@@ -9,52 +9,56 @@ import { randomBytes } from 'crypto';
 const SESSION_DAYS = 7;
 const COOKIE_NAME = 'admin_session';
 
-export async function loginAdmin(formData: FormData) {
+export async function login(formData: FormData) {
+  const key = formData.get('key') as string;
   const email = formData.get('email') as string;
   const password = formData.get('password') as string;
 
-  if (!email || !password) throw new Error('Email and password are required');
+  const ADMIN_KEY = process.env.ADMIN_KEY;
 
-  const admin = await db.admin.findUnique({ where: { email } });
-  if (!admin) throw new Error('Invalid credentials');
+  // 1. Tenta login com Chave Mestra (ADMIN_KEY)
+  if (key && ADMIN_KEY && key === ADMIN_KEY) {
+    cookies().set(COOKIE_NAME, 'key_auth_' + randomBytes(16).toString('hex'), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: SESSION_DAYS * 24 * 60 * 60,
+      path: '/',
+    });
+    redirect('/');
+  }
 
-  const isValid = await bcrypt.compare(password, admin.passwordHash);
-  if (!isValid) throw new Error('Invalid credentials');
+  // 2. Tenta login com Email/Senha (Admin cadastrado no banco)
+  if (email && password) {
+    const admin = await db.admin.findUnique({ where: { email } });
+    if (!admin) throw new Error('Invalid credentials');
 
-  // Gerar token simples para o cookie
-  // Como não temos tabela AdminSession no schema, a sessão é gerenciada via cookie.
-  // A validação real acontece no middleware ou na lib/session.ts (getAdminSession).
-  const token = randomBytes(32).toString('hex');
+    const isValid = await bcrypt.compare(password, admin.passwordHash);
+    if (!isValid) throw new Error('Invalid credentials');
 
-  cookies().set(COOKIE_NAME, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    maxAge: SESSION_DAYS * 24 * 60 * 60, // 7 dias em segundos
-    path: '/',
-  });
+    cookies().set(COOKIE_NAME, 'admin_' + randomBytes(16).toString('hex'), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: SESSION_DAYS * 24 * 60 * 60,
+      path: '/',
+    });
+    redirect('/');
+  }
 
-  redirect('/');
+  // 3. Se passou a senha mestra no campo de senha normal
+  if (password && ADMIN_KEY && password === ADMIN_KEY) {
+    cookies().set(COOKIE_NAME, 'key_auth_' + randomBytes(16).toString('hex'), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: SESSION_DAYS * 24 * 60 * 60,
+      path: '/',
+    });
+    redirect('/');
+  }
+
+  throw new Error('Invalid credentials');
 }
 
-export async function logoutAdmin() {
+export async function logout() {
   cookies().delete(COOKIE_NAME);
   redirect('/login');
-}
-
-// Se você tiver uma função de "Login com Chave Fixa" (ADMIN_KEY), ela seria assim:
-export async function loginWithKey(key: string) {
-  const ADMIN_KEY = process.env.ADMIN_KEY;
-  if (!ADMIN_KEY) throw new Error('ADMIN_KEY not configured');
-  
-  if (key !== ADMIN_KEY) throw new Error('Invalid key');
-
-  // Seta um cookie simples para indicar que o admin está logado
-  cookies().set(COOKIE_NAME, 'key_auth', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    maxAge: SESSION_DAYS * 24 * 60 * 60,
-    path: '/',
-  });
-
-  redirect('/');
 }

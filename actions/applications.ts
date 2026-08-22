@@ -6,8 +6,6 @@ import { randomBytes } from 'crypto';
 import { getAdminSession } from '@/lib/session';
 import { logAudit } from '@/lib/audit';
 import { headers } from 'next/headers';
-import bcrypt from 'bcryptjs';
-import { validateCsrf } from '@/lib/csrf';
 
 function generatePublicId() {
   return `pub_${randomBytes(16).toString('hex')}`;
@@ -26,21 +24,18 @@ async function admin() {
 const ip = () => headers().get('x-forwarded-for') || 'unknown';
 
 export async function createApplication(formData: FormData) {
-  if (!validateCsrf()) throw new Error('CSRF validation failed');
   const session = await admin();
 
   const name = formData.get('name') as string;
+  
   if (!name || name.length < 2) throw new Error('Name must be at least 2 characters');
 
-  const slugBase = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
+  // Gera um slug automático baseado no nome + random para garantir unicidade
+  const slugBase = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   const slug = `${slugBase}-${randomBytes(3).toString('hex')}`;
-
+  
   const publicId = generatePublicId();
-  const secret = generateSecret();
-  const secretHash = await bcrypt.hash(secret, 10);
+  const secret = generateSecret(); // <--- CORREÇÃO: Gerando o secret
 
   try {
     const app = await db.$transaction(async (tx) => {
@@ -48,7 +43,8 @@ export async function createApplication(formData: FormData) {
         data: {
           name,
           slug,
-          appId: publicId, // este é o public id usado no header X-App-Id
+          appId: publicId,
+          appSecret: secret, // <--- CORREÇÃO: Adicionado appSecret aqui
           status: 'ACTIVE',
           hwidLock: true,
           minHwidLength: 16,
@@ -60,18 +56,8 @@ export async function createApplication(formData: FormData) {
           hwidResetCooldownMinutes: 0,
         },
       });
-
-      await tx.applicationCredential.create({
-        data: {
-          publicId,
-          secretHash,
-          appId: newApp.id,
-          status: 'ACTIVE',
-        },
-      });
-
       return newApp;
-    });
+    });    
 
     await logAudit({
       action: 'APPLICATION_CREATED',
@@ -80,18 +66,11 @@ export async function createApplication(formData: FormData) {
       actorId: session.adminId,
       actorType: 'Admin',
       ip: ip(),
-      metadata: { name: app.name },
+      metadata: { name: app.name }
     });
 
     revalidatePath('/applications');
-
-    // Devolve publicId + secret em texto claro (só nesta resposta)
-    return {
-      success: true,
-      appId: app.id,       // id interno (cuid)
-      publicId,            // o que vai no X-App-Id
-      secret,              // o que vai no X-App-Secret (só aparece uma vez)
-    };
+    return { success: true, appId: app.appId, appSecret: secret };
   } catch (error: any) {
     if (error.code === 'P2002') {
       throw new Error('Application name or ID already exists');
@@ -100,90 +79,50 @@ export async function createApplication(formData: FormData) {
   }
 }
 
-export async function regenerateAppSecret(id: string) {
-  if (!validateCsrf()) throw new Error('CSRF validation failed');
-  const session = await admin();
-
-  const app = await db.application.findUnique({ where: { id } });
-  if (!app) throw new Error('Application not found');
-
-  const newSecret = generateSecret();
-  const secretHash = await bcrypt.hash(newSecret, 10);
-
-  const existingCred = await db.applicationCredential.findFirst({
-    where: { appId: id, status: 'ACTIVE' },
-  });
-
-  if (existingCred) {
-    await db.applicationCredential.update({
-      where: { id: existingCred.id },
-      data: { secretHash },
-    });
-  } else {
-    const newPublicId = generatePublicId();
-    await db.applicationCredential.create({
-      data: {
-        publicId: newPublicId,
-        secretHash,
-        appId: id,
-        status: 'ACTIVE',
-      },
-    });
-    await db.application.update({
-      where: { id },
-      data: { appId: newPublicId },
-    });
-  }
-
-  // Desativa outras credenciais ativas antigas
-  await db.applicationCredential.updateMany({
-    where: {
-      appId: id,
-      status: 'ACTIVE',
-      NOT: existingCred ? { id: existingCred.id } : undefined,
-    },
-    data: { status: 'INACTIVE' },
-  });
-
-  await logAudit({
-    action: 'APP_SECRET_REGENERATED',
-    entityType: 'Application',
-    entityId: id,
-    actorId: session.adminId,
-    actorType: 'Admin',
-  });
-
-  revalidatePath(`/applications/${id}`);
-  return { success: true, newSecret };
-}
-
 export async function deleteApplication(id: string) {
-  if (!validateCsrf()) throw new Error('CSRF validation failed');
   const session = await admin();
-
+  
   const app = await db.application.findUnique({ where: { id } });
   if (!app) throw new Error('Application not found');
 
   await db.application.delete({ where: { id } });
-
+  
   await logAudit({
     action: 'APPLICATION_DELETED',
     entityType: 'Application',
     entityId: id,
     actorId: session.adminId,
     actorType: 'Admin',
-    ip: ip(),
+    ip: ip()
   });
 
   revalidatePath('/applications');
 }
 
-export async function regenerateSecret(id: string) {
-  return regenerateAppSecret(id);
+export async function regenerateAppSecret(id: string) {
+  const session = await admin();
+  
+  const newSecret = generateSecret();
+  
+  await db.application.update({
+    where: { id },
+    data: { appSecret: newSecret },
+  });
+
+  await logAudit({
+    action: 'APPLICATION_SECRET_REGENERATED',
+    entityType: 'Application',
+    entityId: id,
+    actorId: session.adminId,
+    actorType: 'Admin',
+    ip: ip()
+  });
+
+  revalidatePath(`/applications/${id}`);
+  return { success: true, newSecret };
 }
 
 export async function updateAppSettings(id: string, formData: FormData) {
-  if (!validateCsrf()) throw new Error('CSRF validation failed');
   await admin();
 
   const name = formData.get('name') as string;
@@ -191,14 +130,7 @@ export async function updateAppSettings(id: string, formData: FormData) {
   const maintenanceMode = formData.get('maintenanceMode') === 'on';
   const forceHwid = formData.get('forceHwid') === 'on';
   const vpnBlock = formData.get('vpnBlock') === 'on';
-  const sessionExpirationMinutes =
-    parseInt(formData.get('sessionExpirationMinutes') as string) || 1440;
-  const minHwidLength = parseInt(formData.get('minHwidLength') as string) || 16;
-  const minUsernameLength =
-    parseInt(formData.get('minUsernameLength') as string) || 3;
-  const hwidResetCooldownMinutes =
-    parseInt(formData.get('hwidResetCooldownMinutes') as string) || 0;
-  const version = (formData.get('version') as string) || '1.0.0';
+  const sessionExpirationMinutes = parseInt(formData.get('sessionExpirationMinutes') as string) || 1440;
 
   if (!name) throw new Error('Name is required');
 
@@ -206,15 +138,11 @@ export async function updateAppSettings(id: string, formData: FormData) {
     where: { id },
     data: {
       name,
-      version,
       hwidLock,
       maintenanceMode,
       forceHwid,
       vpnBlock,
       sessionExpirationMinutes,
-      minHwidLength,
-      minUsernameLength,
-      hwidResetCooldownMinutes,
     },
   });
 
@@ -223,9 +151,8 @@ export async function updateAppSettings(id: string, formData: FormData) {
 }
 
 export async function setAppStatus(id: string, status: string) {
-  if (!validateCsrf()) throw new Error('CSRF validation failed');
   await admin();
-
+  
   if (!['ACTIVE', 'DISABLED', 'MAINTENANCE'].includes(status)) {
     throw new Error('Invalid status');
   }
